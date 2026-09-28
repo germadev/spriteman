@@ -1,0 +1,21 @@
+.text-modal-message {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.text-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.text-modal-message + .text-modal-field {
+  margin-top: 1rem;
+}
+
+.text-modal-input {
+  width: 100%;
+}

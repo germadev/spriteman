@@ -8,17 +8,21 @@
   onTogglePivotMode,
   onToggleLayerRelative,
   onToggleLayerVisibility,
+  onChangeLayerOpacity,
   onRenameLayer,
   onDeleteLayer,
-  onReorderLayer,
-  onMoveLayerUp,
-  onMoveLayerDown
+  onReorderLayer
 }" type="text/typescript">
+  const _d = (module: any) => module?.default ?? module;
+  const Icon = _d(await import('./Icon.html'));
+
   let renamingId: string | null = null;
   let renamingName = '';
   let draggingId: string | null = null;
   let dropTargetId: string | null = null;
   let dropMode: 'before' | 'after' | 'child' | null = null;
+  let openOpacityId: string | null = null;
+  let opacityDraft = 100;
 
   $: validLayers = (layers || []).filter((l: any) => l && typeof l === 'object');
   $: layerCountText = t('layers.count', { count: validLayers.length });
@@ -67,6 +71,34 @@
   const handleDelete = (id: string) => {
     if (validLayers.length > 1) {
       onDeleteLayer?.(id);
+    }
+  };
+
+  const toggleOpacityMenu = (layer: any) => {
+    if (openOpacityId === layer.id) {
+      openOpacityId = null;
+      return;
+    }
+    opacityDraft = Math.round((layer.default_transform?.opacity ?? 1) * 100);
+    openOpacityId = layer.id;
+  };
+
+  const handleOpacityInput = (e: Event) => {
+    opacityDraft = parseInt((e.target as HTMLInputElement).value, 10);
+  };
+
+  const commitOpacity = (layerId: string) => {
+    onChangeLayerOpacity?.(layerId, opacityDraft / 100);
+  };
+
+  const closeOpacityMenu = () => {
+    openOpacityId = null;
+  };
+
+  const handleOpacityKeydown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      closeOpacityMenu();
     }
   };
 
@@ -192,10 +224,10 @@
           </svg>
         </button>
 
-        <span class="layer-drag-handle" :title="t('layers.drag_handle_title')">⋮⋮</span>
+        <span class="layer-drag-handle" :title="t('layers.drag_handle_title')"><Icon name="grip-vertical" :size="14" /></span>
 
         <span class="layer-name-container">
-          <span :if="!!layer.parent_id" class="layer-child-arrow">↳</span>
+          <span :if="!!layer.parent_id" class="layer-child-arrow"><Icon name="corner-down-right" :size="12" /></span>
           <span :if="renamingId !== layer.id" class="layer-name" :title="t('layers.rename_title')"
             @dblclick.stop="startRename(layer)">{{ layer.name }}</span>
           <input :else type="text" class="layer-rename-input" :value="renamingName"
@@ -225,19 +257,29 @@
           </svg>
         </button>
 
-        <button class="btn-layer-action btn-layer-move-up" :title="t('layers.move_up_title')"
-          @click.stop="onMoveLayerUp?.(layer.id)">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="18 15 12 9 6 15"></polyline>
-          </svg>
-        </button>
-
-        <button class="btn-layer-action btn-layer-move-down" :title="t('layers.move_down_title')"
-          @click.stop="onMoveLayerDown?.(layer.id)">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="6 9 12 15 18 9"></polyline>
-          </svg>
-        </button>
+        <div class="layer-opacity-control">
+          <button class="layer-opacity-select" :class="{ active: openOpacityId === layer.id }"
+            :title="t('layers.opacity_title')" :aria-expanded="openOpacityId === layer.id ? 'true' : 'false'"
+            @click.stop="toggleOpacityMenu(layer)">
+            <span>{{ Math.round((layer.default_transform?.opacity ?? 1) * 100) }}%</span>
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+          <div :if="openOpacityId === layer.id" class="layer-opacity-backdrop" @click.stop="closeOpacityMenu()"></div>
+          <div :if="openOpacityId === layer.id" class="layer-opacity-menu" @click.stop
+            @keydown="handleOpacityKeydown($event)">
+            <div class="layer-opacity-menu-header">
+              <span>{{ t('inspector.opacity') }}</span>
+              <output>{{ opacityDraft }}%</output>
+            </div>
+            <input class="layer-opacity-range" type="range" min="0" max="100" step="1"
+              :value="String(opacityDraft)" :aria-label="t('layers.opacity_title')"
+              @input="handleOpacityInput($event)" @change="commitOpacity(layer.id)" />
+            <div class="layer-opacity-scale"><span>0%</span><span>100%</span></div>
+          </div>
+        </div>
 
         <button class="btn-layer-action btn-layer-delete" :class="{ disabled: validLayers.length <= 1 }"
           :style="validLayers.length <= 1 ? 'opacity: 0.3; cursor: not-allowed;' : ''" :title="t('layers.delete_title')"
@@ -248,14 +290,12 @@
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
           </svg>
         </button>
-
-        <span class="layer-z">Z:{{ layer.z_index }}</span>
       </div>
     </div>
 
     <!-- Add Layer placeholder at bottom -->
     <button class="layer-item new" :title="t('layers.add_title')" @click="onAddLayer?.()">
-      <span class="layer-new-icon">+</span>
+      <span class="layer-new-icon"><Icon name="plus" :size="14" /></span>
       <span class="layer-new-text">{{ t('layers.add') }}</span>
     </button>
   </div>

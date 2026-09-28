@@ -1,4 +1,7 @@
 <script :setup="{ t, tabs, activeTab, onSelectTab, onCloseTab, onNewTab }" type="text/typescript">
+  const _d = (module: any) => module?.default ?? module;
+  const Icon = _d(await import('./Icon.html'));
+
   const handleSelect = (tabId: string) => {
     onSelectTab?.(tabId);
   };
@@ -22,9 +25,9 @@
       :class="{ active: tabId === activeTab }"
       @click="handleSelect(tabId)"
     >
-      <span class="tab-title">📄 {{ tabId }}</span>
-      <button class="tab-close" :title="t('tabs.close_title')" @click="handleClose($event, tabId)">✕</button>
+      <span class="tab-title"><Icon name="file" :size="13" />{{ tabId }}</span>
+      <button class="tab-close" :title="t('tabs.close_title')" @click="handleClose($event, tabId)"><Icon name="x" :size="12" /></button>
     </div>
   </div>
-  <button class="btn-new-tab" :title="t('tabs.new_title')" @click="handleNew">+</button>
+  <button class="btn-new-tab" :title="t('tabs.new_title')" @click="handleNew"><Icon name="plus" :size="14" /></button>
 </div>

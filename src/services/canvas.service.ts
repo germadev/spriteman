@@ -213,11 +213,13 @@ class CanvasService {
       changed = true;
     }
 
-    const nextOnion = onionPixels ?? null;
-    if (this.onionPixels !== nextOnion) {
-      this.onionPixels = nextOnion;
-      this.onionDirty = true;
-      changed = true;
+    if (onionPixels !== undefined) {
+      const nextOnion = onionPixels ?? null;
+      if (this.onionPixels !== nextOnion) {
+        this.onionPixels = nextOnion;
+        this.onionDirty = true;
+        changed = true;
+      }
     }
 
     if (activeLayerPixels !== undefined && this.activeLayerPixels !== activeLayerPixels) {

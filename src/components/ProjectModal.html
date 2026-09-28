@@ -10,6 +10,10 @@
   onImportJson,
   onClose
 }" type="text/typescript">
+  const _d = (module: any) => module?.default ?? module;
+  const Modal = _d(await import('./Modal.html'));
+  const Icon = _d(await import('./Icon.html'));
+
   let projectName = 'sprite_character_1';
   let canvasSize = '64x64';
   let fps = '12';
@@ -45,31 +49,29 @@
   const formatDate = (t: number) => new Date(t).toLocaleDateString();
 </script>
 
-<div class="modal-backdrop" :style="`display: ${isOpen ? 'flex' : 'none'};`">
-  <div class="modal-dialog">
-    <div class="modal-header">
-      <div class="modal-tabs">
+<Modal :open="isOpen" :ariaLabel="t('modal.project_dialog_title')"
+  :closeLabel="t('modal.close_title')" :onClose="onClose">
+  <template :slot.header>
+    <div class="modal-tabs">
         <button
           class="modal-tab"
           :class="{ active: currentTab === 'new' || !currentTab }"
           @click="currentTab = 'new'"
         >
-          {{ t('modal.new_tab') }}
+          <Icon name="file" :size="14" />{{ t('modal.new_tab') }}
         </button>
         <button
           class="modal-tab"
           :class="{ active: currentTab === 'open' }"
           @click="currentTab = 'open'"
         >
-          {{ t('modal.open_tab', { count: savedFiles ? savedFiles.length : 0 }) }}
+          <Icon name="folder-open" :size="14" />{{ t('modal.open_tab', { count: savedFiles ? savedFiles.length : 0 }) }}
         </button>
-      </div>
-      <button class="modal-close" :title="t('modal.close_title')" @click="onClose?.()">✕</button>
     </div>
+  </template>
 
-    <div class="modal-body">
-      <!-- New Tab -->
-      <div :if="currentTab === 'new' || !currentTab">
+  <!-- New Tab -->
+  <div :if="currentTab === 'new' || !currentTab">
         <div class="form-group">
           <label class="form-label">{{ t('modal.project_name') }}</label>
           <input
@@ -115,15 +117,10 @@
           </select>
         </div>
 
-        <div class="modal-footer">
-          <button id="btn-create-project" class="btn-primary" @click="handleCreate">
-            {{ t('modal.create_button') }}
-          </button>
-        </div>
-      </div>
+  </div>
 
-      <!-- Open Tab -->
-      <div :else class="open-section">
+  <!-- Open Tab -->
+  <div :else class="open-section">
         <span class="section-title">{{ t('modal.storage_badge') }}</span>
 
         <div :if="!savedFiles || savedFiles.length === 0" class="empty-file-list">
@@ -132,26 +129,27 @@
         <div :else class="file-list">
           <div :each="f in savedFiles" :key="f.name" class="file-item">
             <div class="file-info">
-              <span class="file-name">📄 {{ f.name }}</span>
+              <span class="file-name"><Icon name="file" :size="13" />{{ f.name }}</span>
               <span class="file-date">{{ formatDate(f.updatedAt) }}</span>
             </div>
-            <button class="btn-open-file" @click="handleOpen(f.name)">{{ t('modal.open') }}</button>
+            <button class="btn-open-file" @click="handleOpen(f.name)"><Icon name="folder-open" :size="13" />{{ t('modal.open') }}</button>
           </div>
         </div>
 
-        <div class="divider"></div>
-
-        <div class="external-actions">
-          <button id="btn-open-sample" class="btn-secondary" @click="handleSample">
-            {{ t('modal.sample') }}
-          </button>
-
-          <label class="btn-secondary file-upload-label">
-            {{ t('modal.import') }}
-            <input id="file-upload-json" type="file" accept=".json" style="display: none;" @change="handleFileInput" />
-          </label>
-        </div>
-      </div>
-    </div>
   </div>
-</div>
+
+  <template :slot.footer>
+    <button :if="currentTab === 'new' || !currentTab" id="btn-create-project" class="btn-primary" @click="handleCreate">
+      <Icon name="sparkles" :size="15" />{{ t('modal.create_button') }}
+    </button>
+    <div :else class="external-actions">
+      <button id="btn-open-sample" class="btn-secondary" @click="handleSample">
+        <Icon name="sparkles" :size="14" />{{ t('modal.sample') }}
+      </button>
+      <label class="btn-secondary file-upload-label">
+        <Icon name="upload" :size="14" />{{ t('modal.import') }}
+        <input id="file-upload-json" type="file" accept=".json" style="display: none;" @change="handleFileInput" />
+      </label>
+    </div>
+  </template>
+</Modal>

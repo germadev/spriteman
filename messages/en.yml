@@ -8,14 +8,14 @@ app:
   title: "Spritemotion — Pixel Art Sprite Animator"
   size_badge: "{width} × {height} px"
   fps_badge: "{fps} FPS"
-  export: "⭳ Export"
-  export_title: Download this project as a JSON file
-  save: "💾 Save"
+  export: Export
+  export_title: Export frame, animation, or project
+  save: Save
   saving: "… Saving"
-  saved: "✓ Saved"
-  save_failed: "⚠ Not saved"
+  saved: Saved
+  save_failed: Not saved
   save_title: Save project to browser storage
-  install: "⬇ Install App"
+  install: Install App
 
 canvas:
   reset: Reset view
@@ -23,8 +23,8 @@ canvas:
   hint: "Shift: move layer • Ctrl: move pixel • Space: pan • Ctrl+Wheel: zoom"
 
 timeline:
-  play: "▶ Play"
-  pause: "⏸ Pause"
+  play: Play
+  pause: Pause
   play_title: Play / Pause
   prev_title: Previous frame
   next_title: Next frame
@@ -35,7 +35,8 @@ timeline:
   onion_title: Onion skinning
   group_title: "Group selected frames ({from}..{to}) with a pivot and automatic in-betweens"
   frame_indicator: "Frame: {current} / {total}"
-  new_animation: "+ New animation"
+  new_animation: New animation
+  add_animation: Create animation
   new_animation_title: Create a new animation sequence for this character
   animation_tab_title: "{name} ({frames} frames)"
   animation_badge: "{frames}f"
@@ -62,6 +63,7 @@ layers:
   rename_title: Double click to rename
   show_title: Show layer
   hide_title: Hide layer
+  opacity_title: Change layer opacity
   move_up_title: "Move layer up (raise z-index)"
   move_down_title: "Move layer down (lower z-index)"
   delete_title: Delete layer
@@ -93,32 +95,35 @@ settings:
 
 welcome:
   tagline: "Pixel art animated sprite editor with skeletal hierarchy & WebAssembly engine"
-  create_title: "📄 Create New Project"
+  create_title: Create New Project
   create_hint: Starts with 1 frame
   project_name: "Project Name:"
   project_name_placeholder: e.g. hero_run
   canvas_size: "Canvas Dimensions (px):"
   fps: "Animation Speed (FPS):"
-  create_button: "✨ Create Project (1 Frame)"
-  open_title: "📁 Open Saved Project"
+  create_button: Create Project (1 Frame)
+  open_title: Open Saved Project
   storage_badge: Browser storage
   open: Open
   no_projects: No saved projects yet
 
 modal:
-  new_tab: "📄 New Project"
-  open_tab: "📁 Open Project ({count})"
+  project_dialog_title: Projects
+  confirm: Confirm
+  cancel: Cancel
+  new_tab: New Project
+  open_tab: "Open Project ({count})"
   close_title: Close
   project_name: "Project Name:"
   project_name_placeholder: e.g. hero_idle
   canvas_size: "Pixel Canvas Size:"
   create_hint: Starts with 1 initial frame and a centered base layer.
   fps: "Animation Speed (FPS):"
-  create_button: "✨ Create Project"
+  create_button: Create Project
   storage_badge: Saved in browser storage
   open: Open
-  sample: "🌟 Open Sample Walk Project"
-  import: "📥 Import JSON File"
+  sample: Open Sample Walk Project
+  import: Import JSON File
 
 tabs:
   close_title: Close tab
@@ -141,5 +146,31 @@ fps:
   30: 30 FPS (Fluid)
 
 storage:
+  error_title: Save failed
   quota_exceeded: "Not enough storage left to save \"{name}\". Export the project to a file and free up space."
+
+export:
+  title: Export
+  subtitle: Choose what to download and its format.
+  scope_title: Content
+  scope_frame: Selected frame
+  scope_frame_hint: "Frame {frame}"
+  scope_animation: Active animation
+  active_animation: Current animation
+  scope_project: Complete project
+  scope_project_hint: Layers, clips, and editable data
+  format_title: Format
+  svg_hint: Pixel-perfect vector
+  ico_hint: Windows icon
+  ani_hint: Windows animated cursor
+  download: Download
+  exporting: Exporting…
+  error_title: Export failed
+  error_message: The file could not be generated. Check the console for details.
+  summary_frame_svg: Exports the selected frame as a compact SVG grouped by color.
+  summary_frame_ico: Exports the selected frame as an ICO icon with embedded pixel-perfect PNG.
+  summary_animation_svg: Exports the active animation as a self-contained continuously looping SVG.
+  summary_animation_lottie: Exports the active animation as LottieFiles-compatible shapes.
+  summary_animation_ani: Exports the active animation as a Windows ANI cursor with per-frame timing.
+  summary_project_spritemotion: Exports the complete editable project in Spritemotion JSON format.
   save_failed: The project could not be saved.

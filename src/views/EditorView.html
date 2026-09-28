@@ -17,13 +17,26 @@
   const FrameStripComponent = _d(await import('../components/FrameStrip.html'));
   const HierarchyTreeComponent = _d(await import('../components/HierarchyTree.html'));
   const PixelPaletteComponent = _d(await import('../components/PixelPalette.html'));
-  const AnimationSettingsComponent = _d(await import('../components/AnimationSettings.html'));
   const InspectorPanelComponent = _d(await import('../components/InspectorPanel.html'));
   const ProjectModalComponent = _d(await import('../components/ProjectModal.html'));
+  const TextModalComponent = _d(await import('../components/TextModal.html'));
+  const ExportModalComponent = _d(await import('../components/ExportModal.html'));
+  const Icon = _d(await import('../components/Icon.html'));
   const ProjectTabsComponent = _d(await import('../components/ProjectTabs.html'));
   const WelcomeScreenComponent = _d(await import('../components/WelcomeScreen.html'));
 
   const { STANDARD_PIXEL_SIZES, PIXEL_ART_PALETTE } = await import('../helpers/palette.helper');
+  const { getDiscreteFrameIndex } = await import('../helpers/animation.helper');
+  const {
+    buildAni,
+    buildIco,
+    exportAnimationSvg,
+    exportFrameSvg,
+    exportLottie,
+    readActiveAnimation,
+    renderFramePng,
+    safeExportName,
+  } = await import('../helpers/export.helper');
   const { formatMatrix } = await import('../helpers/format.helper');
   const { $toRaw } = await import('jq79');
   const { findRenderItem } = await import('../wasm/index');
@@ -35,27 +48,58 @@
   let isInstallable = pwaService.getState().isInstallable;
   let saveButtonText = t('app.save');
 
-  $: sizeBadgeText = t('app.size_badge', { width: canvasWidth || 64, height: canvasHeight || 64 });
-  $: fpsBadgeText = t('app.fps_badge', { fps: fps || 12 });
+  $: currentSizeValue = `${canvasWidth || 64}x${canvasHeight || 64}`;
   $: currentSaveText = saveButtonText || t('app.save');
 
   let canvasStage: any;
   let frameStrip: any;
   let hierarchyTree: any;
   let pixelPalette: any;
-  let animationSettings: any;
   let inspectorPanel: any;
   let projectModal: any;
+  let textModal: any;
+  let exportModal: any;
   let projectTabs: any;
   let welcomeScreen: any;
 
   let currentZoom = 6;
+  let selectedFrameIndex = 0;
   let activeProjectName = '';
   let isTempSwapped = false;
+  let textModalAction: ((value: string) => void) | null = null;
+
+  const closeTextModal = () => {
+    if (textModal?.data) textModal.data.open = false;
+    textModalAction = null;
+  };
+
+  const openTextModal = (options: {
+    title: string;
+    message?: string;
+    inputValue?: string;
+    inputLabel?: string;
+    inputPlaceholder?: string;
+    showInput?: boolean;
+    showCancel?: boolean;
+    confirmLabel?: string;
+    onConfirm?: (value: string) => void;
+  }) => {
+    if (!textModal?.data) return;
+    textModalAction = options.onConfirm ?? null;
+    textModal.data.title = options.title;
+    textModal.data.message = options.message || '';
+    textModal.data.inputValue = options.inputValue || '';
+    textModal.data.inputLabel = options.inputLabel || '';
+    textModal.data.inputPlaceholder = options.inputPlaceholder || '';
+    textModal.data.showInput = options.showInput === true;
+    textModal.data.showCancel = options.showCancel === true;
+    textModal.data.confirmLabel = options.confirmLabel || t('modal.confirm');
+    textModal.data.open = true;
+  };
 
   const syncPivotState = () => {
     const isPivot = canvasService.isPivotMode();
-    const currentInt = Math.round(animationService.getState().currentFrame);
+    const currentInt = selectedFrameIndex;
     const activeGroup = projectService.getActiveLayerGroupForFrame(currentInt);
 
     if (activeGroup && isPivot) {
@@ -83,7 +127,8 @@
     if (projectService.didLastHistoryChangeStructure()) {
       animationService.reloadProject(projectService.getEngineJson());
       const totalFrames = projectService.getState().meta.total_frames;
-      const curF = Math.min(Math.round(animationService.getState().currentFrame), Math.max(0, totalFrames - 1));
+      const curF = Math.min(selectedFrameIndex, Math.max(0, totalFrames - 1));
+      selectedFrameIndex = curF;
       animationService.seek(curF);
     }
     saveCurrentProject();
@@ -144,7 +189,11 @@
         err?.name === 'StorageQuotaError'
           ? t('storage.quota_exceeded', { name: activeProjectName })
           : t('storage.save_failed');
-      window.alert(message);
+      openTextModal({
+        title: t('storage.error_title'),
+        message,
+        confirmLabel: t('modal.confirm'),
+      });
     }
   };
 
@@ -170,18 +219,61 @@
     }, 500);
   };
 
-  /** Downloads the current document, the escape hatch when browser storage is full. */
-  const exportCurrentProject = (): void => {
-    if (!activeProjectName) return;
-    const blob = new Blob([projectService.getRawJson()], { type: 'application/json' });
+  const downloadBlob = (blob: Blob, filename: string): void => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${activeProjectName}.json`;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
+  const openExportModal = (): void => {
+    if (!exportModal?.data) return;
+    const state = projectService.getState();
+    const active = state.animations.find((animation: any) => animation.id === state.activeAnimationId);
+    exportModal.data.frameNumber = selectedFrameIndex + 1;
+    exportModal.data.animationName = active?.name || '';
+    exportModal.data.open = true;
+  };
+
+  const exportSelection = async (scope: string, format: string): Promise<void> => {
+    if (!activeProjectName) return;
+    try {
+      const projectJson = projectService.getRawJson();
+      const animation = readActiveAnimation(projectJson);
+      const projectName = safeExportName(activeProjectName);
+      const animationName = safeExportName(animation.name);
+
+      if (scope === 'project' && format === 'spritemotion') {
+        downloadBlob(new Blob([projectJson], { type: 'application/json' }), `${projectName}.spritemotion.json`);
+      } else if (scope === 'frame' && format === 'svg') {
+        downloadBlob(new Blob([exportFrameSvg(animation, selectedFrameIndex)], { type: 'image/svg+xml' }), `${animationName}-frame-${selectedFrameIndex + 1}.svg`);
+      } else if (scope === 'animation' && format === 'svg') {
+        downloadBlob(new Blob([exportAnimationSvg(animation)], { type: 'image/svg+xml' }), `${animationName}.animated.svg`);
+      } else if (scope === 'animation' && format === 'lottie') {
+        downloadBlob(new Blob([exportLottie(animation)], { type: 'application/json' }), `${animationName}.lottie.json`);
+      } else if (scope === 'frame' && format === 'ico') {
+        const png = await renderFramePng(animation.frames[selectedFrameIndex] || {}, animation.width, animation.height);
+        const ico = buildIco(png, Math.min(256, animation.width), Math.min(256, animation.height));
+        downloadBlob(new Blob([ico as BlobPart], { type: 'image/x-icon' }), `${animationName}-frame-${selectedFrameIndex + 1}.ico`);
+      } else if (scope === 'animation' && format === 'ani') {
+        const icons: Uint8Array[] = [];
+        for (const frame of animation.frames) {
+          const png = await renderFramePng(frame, animation.width, animation.height);
+          icons.push(buildIco(png, Math.min(256, animation.width), Math.min(256, animation.height)));
+        }
+        const ani = buildAni(icons, Math.min(256, animation.width), Math.min(256, animation.height), animation.fps);
+        downloadBlob(new Blob([ani as BlobPart], { type: 'application/x-navi-animation' }), `${animationName}.ani`);
+      }
+      if (exportModal?.data) exportModal.data.open = false;
+    } catch (error) {
+      console.error('[export] Failed to export', error);
+      if (exportModal?.data) exportModal.data.open = false;
+      openTextModal({ title: t('export.error_title'), message: t('export.error_message') });
+    }
   };
 
   const loadActiveProject = async (projectName: string): Promise<void> => {
@@ -202,6 +294,7 @@
 
     projectService.setProjectJson(json);
     await animationService.reloadProject(projectService.getEngineJson());
+    selectedFrameIndex = 0;
     animationService.seek(0);
     syncPivotState();
   };
@@ -279,24 +372,59 @@
     }
   };
 
+  const handleCanvasSizeChange = (e: Event) => {
+    const [width, height] = (e.target as HTMLSelectElement).value.split('x').map(Number);
+    projectService.setCanvasSize(width, height);
+    canvasService.setCanvasSize(width, height);
+    animationService.reloadProject(projectService.getEngineJson());
+    saveCurrentProject();
+  };
+
+  const handleFpsChange = (e: Event) => {
+    const nextFps = parseInt((e.target as HTMLSelectElement).value, 10);
+    projectService.setFps(nextFps);
+    animationService.setFps(nextFps);
+    animationService.reloadProject(projectService.getEngineJson());
+    saveCurrentProject();
+  };
+
   let lastFramesStamp = '';
   let lastLayersStamp = '';
+  let lastPlaybackFrame = -1;
+  let playbackWasRunning = false;
   // Shared so "this layer has no groups" keeps a stable identity between updates;
   // a fresh [] every time reads as a change and rebuilds the whole frame reel.
   const NO_GROUPS: any[] = [];
 
+  const syncTimelinePlayhead = (frameIndex: number, totalFrames: number, isPlaying: boolean): void => {
+    if (frameIndex === lastPlaybackFrame && isPlaying === playbackWasRunning) return;
+    lastPlaybackFrame = frameIndex;
+    playbackWasRunning = isPlaying;
+
+    const wrapper = document.querySelector('.framestrip-wrapper');
+    wrapper?.querySelector('.frame-cell.is-playhead')?.classList.remove('is-playhead');
+    if (isPlaying) {
+      wrapper?.querySelector(`.frame-cell[data-frame-index="${frameIndex}"]`)?.classList.add('is-playhead');
+    }
+    const indicator = wrapper?.querySelector('.frame-indicator span');
+    if (indicator) {
+      indicator.textContent = t('timeline.frame_indicator', { current: frameIndex + 1, total: totalFrames });
+    }
+  };
+
   /** Pushes the shared editor state into the panels, skipping anything unchanged. */
   const syncPanels = (projState: any, animState: any): void => {
-    const currentInt = Math.round(animState.currentFrame);
+    const currentInt = getDiscreteFrameIndex(animState.currentFrame, animState.totalFrames);
     const activeLayer = (projState.layers || []).find((l: any) => l && l.id === projState.selectedLayerId);
     const layerGroups = activeLayer?.groups || NO_GROUPS;
     const activeGroup = projectService.getActiveLayerGroupForFrame(currentInt);
     const isPivot = canvasService.isPivotMode();
 
     if (frameStrip?.data) {
-      setField(frameStrip, 'currentFrame', animState.currentFrame);
+      setField(frameStrip, 'selectedFrame', selectedFrameIndex);
       setField(frameStrip, 'totalFrames', projState.meta.total_frames);
       setField(frameStrip, 'isPlaying', animState.isPlaying);
+      setField(frameStrip, 'onionSkin', animState.onionSkinEnabled);
       setField(frameStrip, 'framePixels', projState.frame_pixels);
       setField(frameStrip, 'spriteWidth', projState.meta.canvas_width);
       setField(frameStrip, 'spriteHeight', projState.meta.canvas_height);
@@ -312,8 +440,10 @@
       const stamp = projectService.getFramesStamp();
       if (stamp !== lastFramesStamp) {
         lastFramesStamp = stamp;
+        frameStrip.data.frameEpoch = projectService.getFramesEpoch();
         frameStrip.data.frameRevisions = projectService.getFrameRevisions();
       }
+      syncTimelinePlayhead(currentInt, projState.meta.total_frames, animState.isPlaying);
     }
 
     if (animState.resolvedFrame && inspectorPanel?.data) {
@@ -330,9 +460,11 @@
    * registered as a provider that only runs when the highlight is drawn.
    */
   const syncCanvasContent = (projState: any, animState: any): void => {
-    const currentInt = Math.round(animState.currentFrame);
+    const currentInt = getDiscreteFrameIndex(animState.currentFrame, animState.totalFrames);
+    const totalFrames = Math.max(1, projState.meta.total_frames || 1);
+    const previousInt = (currentInt - 1 + totalFrames) % totalFrames;
     const onionPixels =
-      animState.onionSkinEnabled && currentInt > 0 ? projectService.getFrameComposite(currentInt - 1) : null;
+      animState.onionSkinEnabled && totalFrames > 1 ? projectService.getFrameComposite(previousInt) : null;
     canvasService.setFramePixels(projectService.getFrameComposite(currentInt), onionPixels);
     canvasService.setActiveLayerSource(
       `${currentInt}:${projState.selectedLayerId}:${projectService.getFramesStamp()}`,
@@ -375,13 +507,6 @@
       fps = projState.meta.fps;
 
       canvasService.setCanvasSize(projState.meta.canvas_width, projState.meta.canvas_height);
-      if (animationSettings?.data) {
-        setField(animationSettings, 'width', projState.meta.canvas_width);
-        setField(animationSettings, 'height', projState.meta.canvas_height);
-        setField(animationSettings, 'fps', projState.meta.fps);
-        setField(animationSettings, 'zoom', currentZoom);
-      }
-
       syncPivotState();
       syncPanels(projState, anim);
       syncCanvasContent(projState, anim);
@@ -436,6 +561,7 @@
         e.preventDefault();
         const newIdx = projectService.addFrame(true);
         animationService.reloadProject(projectService.getEngineJson());
+        selectedFrameIndex = newIdx;
         animationService.seek(newIdx);
         saveCurrentProject();
         return;
@@ -501,7 +627,7 @@
     t,
     canvasService,
     onPaintStroke: (pixels: any, color: string) => {
-      const currentInt = Math.round(animationService.getState().currentFrame);
+      const currentInt = selectedFrameIndex;
       const group = projectService.getActiveLayerGroupForFrame(currentInt);
       if (group && currentInt > group.start_frame && currentInt < group.end_frame) {
         return;
@@ -517,7 +643,7 @@
     onSetPivot: (x: number, y: number) => {
       const proj = projectService.getState();
       const selectedId = proj.selectedLayerId;
-      const currentInt = Math.round(animationService.getState().currentFrame);
+      const currentInt = selectedFrameIndex;
       if (selectedId) {
         const group = projectService.getActiveLayerGroupForFrame(currentInt);
         if (group) {
@@ -530,7 +656,7 @@
     onStartTranslateLayer: () => {
       const proj = projectService.getState();
       const selectedId = proj.selectedLayerId;
-      const currentInt = Math.round(animationService.getState().currentFrame);
+      const currentInt = selectedFrameIndex;
       if (selectedId) {
         projectService.startLayerTranslation(selectedId, currentInt);
       }
@@ -538,12 +664,12 @@
     onTranslateLayer: (deltaX: number, deltaY: number, isFinal: boolean = true) => {
       const proj = projectService.getState();
       const selectedId = proj.selectedLayerId;
-      const currentInt = Math.round(animationService.getState().currentFrame);
+      const currentInt = selectedFrameIndex;
       if (selectedId) {
         projectService.translateLayer(selectedId, deltaX, deltaY, currentInt, isFinal);
         // Read the composite the project already maintains, and let the highlight resolve
         // itself lazily — a drag step must not recompose or rebuild anything eagerly.
-        canvasService.setFramePixels(projectService.getFrameComposite(currentInt), null);
+        canvasService.setFramePixels(projectService.getFrameComposite(currentInt));
         canvasService.setActiveLayerSource(
           `drag:${currentInt}:${selectedId}:${deltaX}:${deltaY}:${isFinal}`,
           () => projectService.getActiveLayerMovingPixels(currentInt)
@@ -557,7 +683,7 @@
     onStartMovePixel: (x: number, y: number) => {
       const proj = projectService.getState();
       const selectedId = proj.selectedLayerId;
-      const currentInt = Math.round(animationService.getState().currentFrame);
+      const currentInt = selectedFrameIndex;
       if (selectedId) {
         projectService.startPixelMove(selectedId, currentInt, x, y);
       }
@@ -565,10 +691,10 @@
     onMovePixel: (fromX: number, fromY: number, toX: number, toY: number, isFinal: boolean = true) => {
       const proj = projectService.getState();
       const selectedId = proj.selectedLayerId;
-      const currentInt = Math.round(animationService.getState().currentFrame);
+      const currentInt = selectedFrameIndex;
       if (selectedId) {
         projectService.movePixel(selectedId, currentInt, fromX, fromY, toX, toY, isFinal);
-        canvasService.setFramePixels(projectService.getFrameComposite(currentInt), null);
+        canvasService.setFramePixels(projectService.getFrameComposite(currentInt));
         canvasService.setActiveLayerSource(
           `pixel:${currentInt}:${selectedId}:${toX}:${toY}`,
           () => projectService.getActiveLayerMovingPixels(currentInt)
@@ -581,9 +707,6 @@
     },
     onZoomChange: (zoomVal: number) => {
       currentZoom = zoomVal;
-      if (animationSettings?.data) {
-        animationSettings.data.zoom = zoomVal;
-      }
     },
   });
 
@@ -638,6 +761,11 @@
       animationService.reloadProject(projectService.getEngineJson());
       saveCurrentProject();
     },
+    onChangeLayerOpacity: (layerId: string, opacity: number) => {
+      projectService.setLayerOpacity(layerId, opacity);
+      animationService.reloadProject(projectService.getEngineJson());
+      saveCurrentProject();
+    },
     onRenameLayer: (layerId: string, name: string) => {
       projectService.renameLayer(layerId, name);
       animationService.reloadProject(projectService.getEngineJson());
@@ -657,28 +785,19 @@
       animationService.reloadProject(projectService.getEngineJson());
       saveCurrentProject();
     },
-    onMoveLayerUp: (layerId: string) => {
-      projectService.moveLayerUp(layerId);
-      animationService.reloadProject(projectService.getEngineJson());
-      saveCurrentProject();
-    },
-    onMoveLayerDown: (layerId: string) => {
-      projectService.moveLayerDown(layerId);
-      animationService.reloadProject(projectService.getEngineJson());
-      saveCurrentProject();
-    },
   });
 
   frameStrip = FrameStripComponent.mount(root.querySelector('.framestrip-wrapper'), {
     t,
     totalFrames: 1,
-    currentFrame: 0,
+    selectedFrame: 0,
     isPlaying: false,
     onionSkin: true,
     spriteWidth: 64,
     spriteHeight: 64,
     framePixels: {},
     frameRevisions: [],
+    frameEpoch: 0,
     animations: [],
     activeAnimationId: '',
     layerGroups: [],
@@ -686,15 +805,27 @@
     isPivotMode: false,
     canUndo: false,
     canRedo: false,
-    onTogglePlay: () => animationService.togglePlay(),
+    onTogglePlay: () => {
+      if (animationService.getState().isPlaying) {
+        animationService.pause();
+        animationService.seek(selectedFrameIndex);
+      } else {
+        animationService.seek(selectedFrameIndex);
+        animationService.play();
+      }
+    },
     onSelectFrame: (idx: number) => {
       animationService.pause();
+      selectedFrameIndex = idx;
       animationService.seek(idx);
       syncPivotState();
     },
     onSelectRange: (start: number, end: number) => {},
     onStep: (delta: number) => {
-      animationService.step(delta);
+      animationService.pause();
+      const total = Math.max(1, animationService.getState().totalFrames);
+      selectedFrameIndex = (selectedFrameIndex + delta + total) % total;
+      animationService.seek(selectedFrameIndex);
       syncPivotState();
     },
     onAddFrame: (targetIndex?: number) => {
@@ -702,27 +833,31 @@
         ? projectService.insertFrame(targetIndex, true)
         : projectService.addFrame(true);
       animationService.reloadProject(projectService.getEngineJson());
+      selectedFrameIndex = newIdx;
       animationService.seek(newIdx);
       saveCurrentProject();
     },
     onReorderFrame: (from: number, to: number) => {
       projectService.reorderFrame(from, to);
       animationService.reloadProject(projectService.getEngineJson());
+      selectedFrameIndex = to;
       animationService.seek(to);
       saveCurrentProject();
     },
     onDuplicateFrame: () => {
-      const currentInt = Math.round(animationService.getState().currentFrame);
+      const currentInt = selectedFrameIndex;
       const newIdx = projectService.duplicateFrame(currentInt);
       animationService.reloadProject(projectService.getEngineJson());
+      selectedFrameIndex = newIdx;
       animationService.seek(newIdx);
       saveCurrentProject();
     },
     onDeleteFrame: () => {
-      const currentInt = Math.round(animationService.getState().currentFrame);
+      const currentInt = selectedFrameIndex;
       projectService.deleteFrame(currentInt);
       animationService.reloadProject(projectService.getEngineJson());
       const nextInt = Math.max(0, currentInt - 1);
+      selectedFrameIndex = nextInt;
       animationService.seek(nextInt);
       saveCurrentProject();
     },
@@ -746,7 +881,7 @@
       }
     },
     onToggleGroupPivotMode: () => {
-      const currentInt = Math.round(animationService.getState().currentFrame);
+      const currentInt = selectedFrameIndex;
       const group = projectService.getActiveLayerGroupForFrame(currentInt);
       if (!group) return;
 
@@ -758,27 +893,48 @@
     onSelectAnimation: (animId: string) => {
       projectService.selectAnimation(animId);
       animationService.reloadProject(projectService.getEngineJson());
+      selectedFrameIndex = 0;
       animationService.seek(0);
       saveCurrentProject();
       syncPivotState();
     },
     onAddAnimation: () => {
-      const name = prompt(t('timeline.new_animation_prompt'), 'walk');
-      if (name !== null) {
-        projectService.addAnimation(name.trim() || undefined);
-        animationService.reloadProject(projectService.getEngineJson());
-        animationService.seek(0);
-        saveCurrentProject();
-        syncPivotState();
-      }
+      openTextModal({
+        title: t('timeline.new_animation_prompt'),
+        inputValue: 'walk',
+        showInput: true,
+        showCancel: true,
+        confirmLabel: t('timeline.add_animation'),
+        onConfirm: (name: string) => {
+          projectService.addAnimation(name.trim() || undefined);
+          animationService.reloadProject(projectService.getEngineJson());
+          selectedFrameIndex = 0;
+          animationService.seek(0);
+          saveCurrentProject();
+          syncPivotState();
+        },
+      });
     },
-    onRenameAnimation: (animId: string, name: string) => {
-      projectService.renameAnimation(animId, name);
-      saveCurrentProject();
+    onRequestRenameAnimation: (animId: string, currentName: string) => {
+      openTextModal({
+        title: t('timeline.rename_animation_prompt'),
+        inputValue: currentName,
+        showInput: true,
+        showCancel: true,
+        confirmLabel: t('modal.confirm'),
+        onConfirm: (name: string) => {
+          const trimmed = name.trim();
+          if (trimmed && trimmed !== currentName) {
+            projectService.renameAnimation(animId, trimmed);
+            saveCurrentProject();
+          }
+        },
+      });
     },
     onDeleteAnimation: (animId: string) => {
       projectService.deleteAnimation(animId);
       animationService.reloadProject(projectService.getEngineJson());
+      selectedFrameIndex = 0;
       animationService.seek(0);
       saveCurrentProject();
       syncPivotState();
@@ -823,30 +979,7 @@
     },
   });
 
-  animationSettings = AnimationSettingsComponent.mount(root.querySelector('.settings-wrapper'), {
-    t,
-    width: 64,
-    height: 64,
-    fps: 12,
-    zoom: currentZoom,
-    sizes: STANDARD_PIXEL_SIZES,
-    onChangeCanvasSize: (w: number, h: number) => {
-      projectService.setCanvasSize(w, h);
-      canvasService.setCanvasSize(w, h);
-      animationService.reloadProject(projectService.getEngineJson());
-      saveCurrentProject();
-    },
-    onChangeFps: (fpsVal: number) => {
-      projectService.setFps(fpsVal);
-      animationService.setFps(fpsVal);
-      animationService.reloadProject(projectService.getEngineJson());
-      saveCurrentProject();
-    },
-    onChangeZoom: (zoomVal: number) => {
-      currentZoom = zoomVal;
-      canvasService.setZoom(zoomVal);
-    },
-  });
+
 
   projectModal = ProjectModalComponent.mount(root.querySelector('.modal-wrapper'), {
     t,
@@ -875,6 +1008,37 @@
     },
   });
 
+  textModal = TextModalComponent.mount(root.querySelector('.text-modal-wrapper'), {
+    t,
+    open: false,
+    title: '',
+    message: '',
+    inputValue: '',
+    inputLabel: '',
+    inputPlaceholder: '',
+    showInput: false,
+    showCancel: false,
+    confirmLabel: t('modal.confirm'),
+    onConfirm: (value: string) => {
+      const action = textModalAction;
+      if (textModal?.data) textModal.data.open = false;
+      textModalAction = null;
+      action?.(value);
+    },
+    onClose: () => closeTextModal(),
+  });
+
+  exportModal = ExportModalComponent.mount(root.querySelector('.export-modal-wrapper'), {
+    t,
+    open: false,
+    frameNumber: 1,
+    animationName: '',
+    onExport: (scope: string, format: string) => exportSelection(scope, format),
+    onClose: () => {
+      if (exportModal?.data) exportModal.data.open = false;
+    },
+  });
+
   // A pending debounced write must not be lost when the tab closes or is hidden.
   window.addEventListener('beforeunload', () => { flushSave(); });
   document.addEventListener('visibilitychange', () => {
@@ -900,8 +1064,20 @@
     </div>
 
     <div class="topbar-center">
-      <span :if="hasActiveProject" id="topbar-size-badge" class="badge-tag">{{ sizeBadgeText }}</span>
-      <span :if="hasActiveProject" id="topbar-fps-badge" class="badge-tag">{{ fpsBadgeText }}</span>
+      <select :if="hasActiveProject" id="topbar-size-badge" class="badge-tag topbar-select"
+        :value="currentSizeValue" :title="t('settings.canvas_size')" @change="handleCanvasSizeChange">
+        <option :each="preset in STANDARD_PIXEL_SIZES" :key="preset.labelKey"
+          :value="`${preset.width}x${preset.height}`">{{ preset.width }} × {{ preset.height }} px</option>
+      </select>
+      <select :if="hasActiveProject" id="topbar-fps-badge" class="badge-tag topbar-select"
+        :value="String(fps || 12)" :title="t('settings.fps')" @change="handleFpsChange">
+        <option value="6">6 FPS</option>
+        <option value="8">8 FPS</option>
+        <option value="12">12 FPS</option>
+        <option value="16">16 FPS</option>
+        <option value="24">24 FPS</option>
+        <option value="30">30 FPS</option>
+      </select>
     </div>
 
     <div class="topbar-right">
@@ -910,21 +1086,21 @@
         id="btn-menu-export"
         class="topbar-btn"
         :title="t('app.export_title')"
-        @click="exportCurrentProject()"
-      >{{ t('app.export') }}</button>
+        @click="openExportModal()"
+      ><Icon name="download" :size="14" />{{ t('app.export') }}</button>
       <button
         :if="hasActiveProject"
         id="btn-menu-save"
         class="topbar-btn primary"
         :title="t('app.save_title')"
         @click="flushSave()"
-      >{{ currentSaveText }}</button>
+      ><Icon name="save" :size="14" />{{ currentSaveText }}</button>
       <button
         :if="isInstallable"
         id="pwa-install-btn"
         class="pwa-install-btn"
         @click="handleInstall()"
-      >{{ t('app.install') }}</button>
+      ><Icon name="download" :size="14" />{{ t('app.install') }}</button>
     </div>
   </div>
 
@@ -949,11 +1125,12 @@
         <div class="hierarchy-wrapper"></div>
         <div class="inspector-wrapper"></div>
         <div class="palette-wrapper"></div>
-        <div class="settings-wrapper"></div>
       </div>
     </div>
   </div>
 
   <!-- Modal Container -->
   <div class="modal-wrapper"></div>
+  <div class="text-modal-wrapper"></div>
+  <div class="export-modal-wrapper"></div>
 </div>

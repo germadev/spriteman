@@ -48,6 +48,43 @@
       -webkit-text-fill-color: transparent;
     }
 
+    .topbar-select {
+      height: 25px;
+      appearance: auto;
+      cursor: pointer;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    #topbar-size-badge {
+      width: 108px;
+    }
+
+    #topbar-fps-badge {
+      width: 76px;
+    }
+
+    .topbar-select:hover,
+    .topbar-select:focus-visible {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.16);
+    }
+
+    @media (max-width: 760px) {
+      .app-topbar {
+        padding-inline: 0.45rem;
+      }
+
+      .topbar-left,
+      .topbar-center,
+      .topbar-right {
+        gap: 0.3rem;
+      }
+
+      .app-logo {
+        margin-right: 0.2rem;
+      }
+    }
+
 
     /* Main Docked Workspace */
     .app-workspace {

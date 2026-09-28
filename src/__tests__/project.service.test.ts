@@ -24,6 +24,13 @@ describe('pixel editing', () => {
     projectService.setPixels(0, [{ x: 1, y: 1 }], '#00ff00');
     expect(projectService.getFrameRevisions()[0]).toBeGreaterThan(first);
   });
+
+  it('changes the thumbnail cache epoch when a document is replaced', () => {
+    const replacement = projectService.createNewProject('replacement', 8, 8, 12);
+    const before = projectService.getFramesEpoch();
+    projectService.setProjectJson(replacement);
+    expect(projectService.getFramesEpoch()).toBeGreaterThan(before);
+  });
 });
 
 describe('history', () => {
@@ -60,6 +67,29 @@ describe('history', () => {
   });
 });
 
+describe('layer opacity', () => {
+  beforeEach(() => newProject());
+
+  it('updates, clamps and serializes the base layer opacity', () => {
+    projectService.setLayerOpacity('layer_base', 1.5);
+    expect(projectService.getState().layers[0].default_transform?.opacity).toBe(1);
+
+    projectService.setLayerOpacity('layer_base', 0.5);
+    expect(projectService.getState().layers[0].default_transform?.opacity).toBe(0.5);
+    expect(JSON.parse(projectService.getRawJson()).layers[0].default_transform.opacity).toBe(0.5);
+
+    expect(projectService.undo()).toBe(true);
+    expect(projectService.getState().layers[0].default_transform?.opacity).toBe(1);
+  });
+
+  it('applies layer opacity to the composited raster frame', () => {
+    projectService.setPixels(0, [{ x: 2, y: 3 }], '#ff0000');
+    projectService.setLayerOpacity('layer_base', 0.5);
+
+    expect(projectService.getFrameComposite(0)['2,3']).toBe('#ff000080');
+  });
+});
+
 describe('engine document', () => {
   beforeEach(() => newProject());
 
@@ -84,6 +114,24 @@ describe('engine document', () => {
     const before = projectService.getEngineJson();
     projectService.addLayer('Arm');
     expect(projectService.getEngineJson()).not.toBe(before);
+  });
+});
+
+describe('animation tabs', () => {
+  beforeEach(() => newProject());
+
+  it('publishes new animation array references after add and rename', () => {
+    const initial = projectService.getState().animations;
+    const animationId = projectService.addAnimation('walk');
+    const afterAdd = projectService.getState().animations;
+
+    expect(afterAdd).not.toBe(initial);
+    expect(afterAdd).toHaveLength(2);
+
+    projectService.renameAnimation(animationId, 'run');
+    const afterRename = projectService.getState().animations;
+    expect(afterRename).not.toBe(afterAdd);
+    expect(afterRename.find((animation) => animation.id === animationId)?.name).toBe('run');
   });
 });
 

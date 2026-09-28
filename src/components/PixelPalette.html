@@ -9,6 +9,9 @@
   onSelectColors,
   onSwapColors
 }" type="text/typescript">
+  const _d = (module: any) => module?.default ?? module;
+  const Icon = _d(await import('./Icon.html'));
+
   let curPrimary = primaryColor || '#000000';
   let curSecondary = secondaryColor || '#ffffff';
 
@@ -62,7 +65,7 @@
         :class="{ active: isTempSwapped }"
         :title="t('palette.swap_title')"
         @click="onSwapColors?.()"
-      >⇄</button>
+      ><Icon name="refresh-cw" :size="13" /></button>
       <div class="color-slot-display" :title="t('palette.slot_secondary_title')">
         <span class="slot-tag">{{ t('palette.slot_secondary_tag') }}</span>
         <span class="slot-color-preview" :style="getColorPreviewStyle(curSecondary)"></span>

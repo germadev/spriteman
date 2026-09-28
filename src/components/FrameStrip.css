@@ -84,6 +84,9 @@
       cursor: pointer;
       white-space: nowrap;
       flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
       transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
     }
 
@@ -240,11 +243,18 @@
       line-height: 1;
       pointer-events: none;
       z-index: 2;
+      transition: background-color 0.08s ease, color 0.08s ease, box-shadow 0.08s ease;
     }
 
     .frame-cell.active .cell-num {
       color: #ffffff;
       background: #0284c7;
+    }
+
+    .frame-cell.is-playhead .cell-num {
+      color: #111827;
+      background: #fbbf24;
+      box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.28);
     }
 
     .cell-thumb-canvas {
@@ -421,6 +431,9 @@
       overflow: hidden;
       text-overflow: ellipsis;
       user-select: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
     }
 
     .group-pill-actions {

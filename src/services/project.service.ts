@@ -1,5 +1,6 @@
 import { $reactive, $toRaw, ReactiveDeepData } from 'jq79';
 import { decodeCel, encodeCel, EncodedCel } from '../helpers/cel.helper';
+import { parseHexColor } from '../helpers/canvas.helper';
 /**
  * Project document state management service.
  */
@@ -11,6 +12,23 @@ export interface ProjectMeta {
   canvas_width: number;
   canvas_height: number;
 }
+
+const blendPixelColor = (background: string | undefined, foreground: string, opacity: number): string => {
+  const source = parseHexColor(foreground);
+  if (!source || opacity >= 1 && source[3] === 255) return foreground;
+
+  const destination = background ? parseHexColor(background) : null;
+  const sourceAlpha = (source[3] / 255) * opacity;
+  const destinationAlpha = destination ? destination[3] / 255 : 0;
+  const outputAlpha = sourceAlpha + destinationAlpha * (1 - sourceAlpha);
+  if (outputAlpha <= 0) return '#00000000';
+
+  const channel = (index: number) => Math.round(
+    (source[index] * sourceAlpha + (destination?.[index] ?? 0) * destinationAlpha * (1 - sourceAlpha)) / outputAlpha
+  );
+  const hex = (value: number) => value.toString(16).padStart(2, '0');
+  return `#${hex(channel(0))}${hex(channel(1))}${hex(channel(2))}${hex(Math.round(outputAlpha * 255))}`;
+};
 
 export interface LayerFrameGroup {
   id: string;
@@ -156,9 +174,13 @@ class ProjectService {
     const sortedLayers = [...this.state.layers].sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0));
     for (const layer of sortedLayers) {
       if (layer.visible === false) continue;
+      const opacity = Math.max(0, Math.min(1, layer.default_transform?.opacity ?? 1));
+      if (opacity === 0) continue;
       const lPixels = layer.frame_pixels?.[frameIndex];
       if (lPixels && Object.keys(lPixels).length > 0) {
-        Object.assign(composite, lPixels);
+        for (const [coordinate, color] of Object.entries(lPixels)) {
+          composite[coordinate] = blendPixelColor(composite[coordinate], color, opacity);
+        }
       }
     }
     return composite;
@@ -485,6 +507,7 @@ class ProjectService {
       this.state.meta.fps = activeClip.fps ?? this.state.meta.fps;
       this.state.frame_pixels = {};
       this.adoptClipCels(activeClip);
+      this.invalidateAllFrames();
 
       // The document just changed shape, so the cached serializations are stale.
       this.jsonDirty = true;
@@ -1037,6 +1060,24 @@ class ProjectService {
       this.updateJson();
       this.notify();
     }
+  }
+
+  public setLayerOpacity(layerId: string, opacity: number): void {
+    const layer = this.state.layers.find((candidate) => candidate.id === layerId);
+    if (!layer?.default_transform) return;
+
+    const nextOpacity = Math.max(0, Math.min(1, opacity));
+    if (layer.default_transform.opacity === nextOpacity) return;
+
+    this.pushUndoSnapshot();
+    layer.default_transform.opacity = nextOpacity;
+    this.state.layers = [...this.state.layers];
+    const total = this.state.meta.total_frames || Object.keys(this.state.frame_pixels).length || 1;
+    for (let frameIndex = 0; frameIndex < total; frameIndex++) {
+      this.recomposeFrame(frameIndex);
+    }
+    this.updateJson();
+    this.notify();
   }
 
   /**
@@ -1709,6 +1750,7 @@ class ProjectService {
       layer_groups: {},
     };
     this.state.animations.push(newClip);
+    this.state.animations = [...this.state.animations];
     this.selectAnimation(id);
     return id;
   }
@@ -1735,6 +1777,7 @@ class ProjectService {
     if (clip) {
       this.pushUndoSnapshot();
       clip.name = name.trim() || clip.name;
+      this.state.animations = [...this.state.animations];
       this.updateJson();
       this.notify();
     }
@@ -1903,6 +1946,11 @@ class ProjectService {
     return revisions;
   }
 
+  /** Structural generation used to isolate thumbnail cache entries. */
+  public getFramesEpoch(): number {
+    return this.framesEpoch;
+  }
+
   /**
    * Cheap signature of everything the layer tree renders, so the tree is only rebuilt
    * when one of those properties actually changed.
@@ -1912,7 +1960,7 @@ class ProjectService {
       .map(
         (l) =>
           `${l.id}|${l.name}|${l.parent_id ?? ''}|${l.z_index ?? 0}|${l.visible !== false ? 1 : 0}` +
-          `|${l.relative_to_parent !== false ? 1 : 0}|${l.groups?.length ?? 0}`
+          `|${l.relative_to_parent !== false ? 1 : 0}|${l.default_transform?.opacity ?? 1}|${l.groups?.length ?? 0}`
       )
       .join(';');
   }

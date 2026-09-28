@@ -1,0 +1,45 @@
+<script :setup="{
+  t,
+  open,
+  title,
+  message,
+  inputValue,
+  inputLabel,
+  inputPlaceholder,
+  showInput,
+  showCancel,
+  confirmLabel,
+  onConfirm,
+  onClose
+}" type="text/typescript">
+  const _d = (module: any) => module?.default ?? module;
+  const Modal = _d(await import('./Modal.html'));
+
+  const handleConfirm = () => {
+    onConfirm?.(showInput ? inputValue : '');
+  };
+
+  const handleKeydown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleConfirm();
+    }
+  };
+</script>
+
+<Modal :open="open" :ariaLabel="title" :closeLabel="t('modal.close_title')" :onClose="onClose">
+  <template :slot.header><h2 class="app-dialog-title">{{ title }}</h2></template>
+
+  <p :if="message" class="text-modal-message">{{ message }}</p>
+  <label :if="showInput" class="text-modal-field">
+    <span :if="inputLabel" class="form-label">{{ inputLabel }}</span>
+    <input class="form-input text-modal-input" type="text" :value="inputValue || ''"
+      :placeholder="inputPlaceholder || ''" @input="inputValue = $event.target.value"
+      @keydown="handleKeydown($event)" autofocus />
+  </label>
+
+  <template :slot.footer>
+    <button :if="showCancel" class="btn-secondary" type="button" @click="onClose?.()">{{ t('modal.cancel') }}</button>
+    <button class="btn-primary" type="button" @click="handleConfirm()">{{ confirmLabel || t('modal.confirm') }}</button>
+  </template>
+</Modal>

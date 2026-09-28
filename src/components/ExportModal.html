@@ -1,0 +1,112 @@
+<script :setup="{ t, open, frameNumber, animationName, onExport, onClose }" type="text/typescript">
+  const _d = (module: any) => module?.default ?? module;
+  const Modal = _d(await import('./Modal.html'));
+  const Icon = _d(await import('./Icon.html'));
+
+  let scope: 'frame' | 'animation' | 'project' = 'frame';
+  let format: 'svg' | 'spritemotion' | 'lottie' | 'ico' | 'ani' = 'svg';
+  let isExporting = false;
+
+  const formatsByScope: Record<string, string[]> = {
+    frame: ['svg', 'ico'],
+    animation: ['svg', 'lottie', 'ani'],
+    project: ['spritemotion'],
+  };
+
+  const chooseScope = (next: 'frame' | 'animation' | 'project') => {
+    scope = next;
+    if (!formatsByScope[next].includes(format)) format = formatsByScope[next][0] as any;
+  };
+
+  const chooseFormat = (next: 'svg' | 'spritemotion' | 'lottie' | 'ico' | 'ani') => {
+    if (formatsByScope[scope].includes(next)) format = next;
+  };
+
+  const formatEnabled = (candidate: string): boolean => formatsByScope[scope].includes(candidate);
+
+  const getSummary = (): string => {
+    const effectiveFormat = formatsByScope[scope].includes(format) ? format : formatsByScope[scope][0];
+    return t(`export.summary_${scope}_${effectiveFormat}`);
+  };
+
+  const handleExport = async () => {
+    if (isExporting) return;
+    isExporting = true;
+    try {
+      await onExport?.(scope, format);
+    } finally {
+      isExporting = false;
+    }
+  };
+</script>
+
+<Modal :open="open" :ariaLabel="t('export.title')" :closeLabel="t('modal.close_title')" :onClose="onClose">
+  <template :slot.header>
+    <div>
+      <h2 class="app-dialog-title">{{ t('export.title') }}</h2>
+      <p class="export-subtitle">{{ t('export.subtitle') }}</p>
+    </div>
+  </template>
+
+  <section class="export-section">
+    <h3>{{ t('export.scope_title') }}</h3>
+    <div class="export-option-grid export-scope-grid">
+      <button type="button" class="export-option" :class="{ active: scope === 'frame' }" @click="chooseScope('frame')">
+        <Icon name="image" :size="18" />
+        <strong>{{ t('export.scope_frame') }}</strong>
+        <span>{{ t('export.scope_frame_hint', { frame: frameNumber }) }}</span>
+      </button>
+      <button type="button" class="export-option" :class="{ active: scope === 'animation' }" @click="chooseScope('animation')">
+        <Icon name="film" :size="18" />
+        <strong>{{ t('export.scope_animation') }}</strong>
+        <span>{{ animationName || t('export.active_animation') }}</span>
+      </button>
+      <button type="button" class="export-option" :class="{ active: scope === 'project' }" @click="chooseScope('project')">
+        <Icon name="archive" :size="18" />
+        <strong>{{ t('export.scope_project') }}</strong>
+        <span>{{ t('export.scope_project_hint') }}</span>
+      </button>
+    </div>
+  </section>
+
+  <section class="export-section">
+    <h3>{{ t('export.format_title') }}</h3>
+    <div class="export-option-grid export-format-grid">
+      <button :if="formatEnabled('svg')" type="button" class="export-format" :class="{ active: format === 'svg' }"
+        @click="chooseFormat('svg')">
+        <Icon name="file-code" :size="18" />
+        <strong>SVG</strong><span>{{ t('export.svg_hint') }}</span>
+      </button>
+      <button :if="formatEnabled('spritemotion')" type="button" class="export-format" :class="{ active: format === 'spritemotion' }"
+        @click="chooseFormat('spritemotion')">
+        <Icon name="archive" :size="18" />
+        <strong>Spritemotion</strong><span>.json</span>
+      </button>
+      <button :if="formatEnabled('lottie')" type="button" class="export-format" :class="{ active: format === 'lottie' }"
+        @click="chooseFormat('lottie')">
+        <Icon name="film" :size="18" />
+        <strong>Lottie</strong><span>LottieFiles .json</span>
+      </button>
+      <button :if="formatEnabled('ico')" type="button" class="export-format" :class="{ active: format === 'ico' }"
+        @click="chooseFormat('ico')">
+        <Icon name="image" :size="18" />
+        <strong>ICO</strong><span>{{ t('export.ico_hint') }}</span>
+      </button>
+      <button :if="formatEnabled('ani')" type="button" class="export-format" :class="{ active: format === 'ani' }"
+        @click="chooseFormat('ani')">
+        <Icon name="mouse-pointer" :size="18" />
+        <strong>ANI</strong><span>{{ t('export.ani_hint') }}</span>
+      </button>
+    </div>
+  </section>
+
+  <p class="export-summary">{{ getSummary() }}</p>
+
+  <template :slot.footer>
+    <button class="btn-secondary" type="button" @click="onClose?.()">{{ t('modal.cancel') }}</button>
+    <button id="btn-confirm-export" class="btn-primary" type="button" :disabled="isExporting" @click="handleExport()">
+      <Icon name="download" :size="15" />
+      {{ isExporting ? t('export.exporting') : t('export.download') }}
+    </button>
+  </template>
+</Modal>

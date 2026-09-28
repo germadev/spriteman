@@ -6,6 +6,7 @@
  * changed — pixel edits leave the skeleton identical, so they cost nothing here.
  */
 import { $reactive, ReactiveDeepData } from 'jq79';
+import { getDiscreteFrameIndex } from '../helpers/animation.helper';
 import {
   ensureWasmInitialized,
   readFrameBuffer,
@@ -170,7 +171,8 @@ class AnimationService {
       return;
     }
 
-    const prevInt = (Math.round(this.state.currentFrame) - 1 + this.state.totalFrames) % this.state.totalFrames;
+    const currentInt = getDiscreteFrameIndex(this.state.currentFrame, this.state.totalFrames);
+    const prevInt = (currentInt - 1 + this.state.totalFrames) % this.state.totalFrames;
     let cached = this.onionCache.get(prevInt);
     if (!cached) {
       // Cached frames own their buffer; the reusable one belongs to the current frame.
@@ -208,7 +210,7 @@ class AnimationService {
 
   public step(delta: number): void {
     this.pause();
-    const currentInt = Math.round(this.state.currentFrame);
+    const currentInt = getDiscreteFrameIndex(this.state.currentFrame, this.state.totalFrames);
     const next = (currentInt + delta + this.state.totalFrames) % this.state.totalFrames;
     this.seek(next);
   }

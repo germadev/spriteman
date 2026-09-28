@@ -8,14 +8,14 @@ app:
   title: "Spritemotion — Editor de sprites animados"
   size_badge: "{width} × {height} px"
   fps_badge: "{fps} FPS"
-  export: "⭳ Exportar"
-  export_title: Descargar este proyecto como fichero JSON
-  save: "💾 Guardar"
+  export: Exportar
+  export_title: Exportar cuadro, animación o proyecto
+  save: Guardar
   saving: "… Guardando"
-  saved: "✓ Guardado"
-  save_failed: "⚠ Sin guardar"
+  saved: Guardado
+  save_failed: Sin guardar
   save_title: Guardar el proyecto en el almacenamiento del navegador
-  install: "⬇ Instalar app"
+  install: Instalar app
 
 canvas:
   reset: Centrar vista
@@ -23,8 +23,8 @@ canvas:
   hint: "Mayús: mover capa • Ctrl: mover píxel • Espacio: desplazar • Ctrl+Rueda: zoom"
 
 timeline:
-  play: "▶ Reproducir"
-  pause: "⏸ Pausa"
+  play: Reproducir
+  pause: Pausa
   play_title: Reproducir / Pausar
   prev_title: Fotograma anterior
   next_title: Fotograma siguiente
@@ -35,7 +35,8 @@ timeline:
   onion_title: Papel cebolla
   group_title: "Agrupar los fotogramas seleccionados ({from}..{to}) con pivote e interpolación automática"
   frame_indicator: "Fotograma: {current} / {total}"
-  new_animation: "+ Nueva animación"
+  new_animation: Nueva animación
+  add_animation: Crear animación
   new_animation_title: Crear una nueva secuencia de animación para este personaje
   animation_tab_title: "{name} ({frames} fotogramas)"
   animation_badge: "{frames}f"
@@ -62,6 +63,7 @@ layers:
   rename_title: Doble clic para renombrar
   show_title: Mostrar capa
   hide_title: Ocultar capa
+  opacity_title: Cambiar opacidad de la capa
   move_up_title: "Subir la capa (aumentar z-index)"
   move_down_title: "Bajar la capa (reducir z-index)"
   delete_title: Borrar capa
@@ -93,32 +95,35 @@ settings:
 
 welcome:
   tagline: "Editor de sprites animados en pixel art, con jerarquía de capas y motor WebAssembly"
-  create_title: "📄 Crear proyecto nuevo"
+  create_title: Crear proyecto nuevo
   create_hint: Empieza con 1 fotograma
   project_name: "Nombre del proyecto:"
   project_name_placeholder: p. ej. hero_run
   canvas_size: "Dimensiones del lienzo (px):"
   fps: "Velocidad de animación (FPS):"
-  create_button: "✨ Crear proyecto (1 fotograma)"
-  open_title: "📁 Abrir proyecto guardado"
+  create_button: Crear proyecto (1 fotograma)
+  open_title: Abrir proyecto guardado
   storage_badge: Almacenamiento del navegador
   open: Abrir
   no_projects: Aún no hay proyectos guardados
 
 modal:
-  new_tab: "📄 Proyecto nuevo"
-  open_tab: "📁 Abrir proyecto ({count})"
+  project_dialog_title: Proyectos
+  confirm: Aceptar
+  cancel: Cancelar
+  new_tab: Proyecto nuevo
+  open_tab: "Abrir proyecto ({count})"
   close_title: Cerrar
   project_name: "Nombre del proyecto:"
   project_name_placeholder: p. ej. hero_idle
   canvas_size: "Tamaño del lienzo en píxeles:"
   create_hint: Empieza con 1 fotograma y una capa base centrada.
   fps: "Velocidad de animación (FPS):"
-  create_button: "✨ Crear proyecto"
+  create_button: Crear proyecto
   storage_badge: Guardado en el navegador
   open: Abrir
-  sample: "🌟 Abrir el proyecto de ejemplo"
-  import: "📥 Importar fichero JSON"
+  sample: Abrir el proyecto de ejemplo
+  import: Importar fichero JSON
 
 tabs:
   close_title: Cerrar pestaña
@@ -141,5 +146,31 @@ fps:
   30: 30 FPS (fluido)
 
 storage:
+  error_title: No se pudo guardar
   quota_exceeded: "No queda espacio para guardar «{name}». Exporta el proyecto a un fichero y libera espacio."
+
+export:
+  title: Exportar
+  subtitle: Elige qué contenido descargar y su formato.
+  scope_title: Contenido
+  scope_frame: Cuadro seleccionado
+  scope_frame_hint: "Cuadro {frame}"
+  scope_animation: Animación activa
+  active_animation: Animación actual
+  scope_project: Proyecto completo
+  scope_project_hint: Capas, clips y datos editables
+  format_title: Formato
+  svg_hint: Vector pixel-perfect
+  ico_hint: Icono de Windows
+  ani_hint: Cursor animado de Windows
+  download: Descargar
+  exporting: Exportando…
+  error_title: No se pudo exportar
+  error_message: El archivo no pudo generarse. Revisa la consola para ver los detalles.
+  summary_frame_svg: Exporta el cuadro seleccionado como SVG compacto agrupado por colores.
+  summary_frame_ico: Exporta el cuadro seleccionado como icono ICO con PNG pixel-perfect embebido.
+  summary_animation_svg: Exporta la animación activa como SVG autónomo con loop continuo.
+  summary_animation_lottie: Exporta la animación activa como shapes compatibles con LottieFiles.
+  summary_animation_ani: Exporta la animación activa como cursor ANI de Windows con timing por frame.
+  summary_project_spritemotion: Exporta el proyecto editable completo en el formato JSON de Spritemotion.
   save_failed: No se ha podido guardar el proyecto.

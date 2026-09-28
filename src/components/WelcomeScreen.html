@@ -7,6 +7,9 @@
   onOpenSample,
   onImportJson
 }" type="text/typescript">
+  const _d = (module: any) => module?.default ?? module;
+  const Icon = _d(await import('./Icon.html'));
+
   let projectName = 'sprite_character_1';
   let canvasSize = '64x64';
   let fps = '12';
@@ -60,7 +63,7 @@
       <!-- Card 1: Create New Project -->
       <div class="welcome-card">
         <div class="card-header">
-          <h2 class="card-heading">{{ t('welcome.create_title') }}</h2>
+          <h2 class="card-heading"><Icon name="file" :size="17" />{{ t('welcome.create_title') }}</h2>
           <span class="card-hint">{{ t('welcome.create_hint') }}</span>
         </div>
 
@@ -110,7 +113,7 @@
           </div>
 
           <button id="welcome-btn-create" class="welcome-btn-primary" @click="handleCreate">
-            {{ t('welcome.create_button') }}
+            <Icon name="sparkles" :size="15" />{{ t('welcome.create_button') }}
           </button>
         </div>
       </div>
@@ -118,7 +121,7 @@
       <!-- Card 2: Open Existing Project -->
       <div class="welcome-card">
         <div class="card-header">
-          <h2 class="card-heading">{{ t('welcome.open_title') }}</h2>
+          <h2 class="card-heading"><Icon name="folder-open" :size="17" />{{ t('welcome.open_title') }}</h2>
           <span class="card-hint">{{ t('welcome.storage_badge') }}</span>
         </div>
 
@@ -133,21 +136,21 @@
               class="welcome-file-item"
             >
               <div class="welcome-file-info">
-                <span class="welcome-file-name">📄 {{ f.name }}</span>
+                <span class="welcome-file-name"><Icon name="file" :size="13" />{{ f.name }}</span>
                 <span class="welcome-file-date">{{ formatDate(f.updatedAt) }}</span>
               </div>
-              <button class="welcome-btn-open" @click="handleOpen(f.name)">{{ t('welcome.open') }}</button>
+              <button class="welcome-btn-open" @click="handleOpen(f.name)"><Icon name="folder-open" :size="13" />{{ t('welcome.open') }}</button>
             </div>
           </div>
         </div>
 
         <div class="welcome-extra-actions">
           <button id="welcome-btn-sample" class="welcome-btn-secondary" @click="handleSample">
-            {{ t('modal.sample') }}
+            <Icon name="sparkles" :size="14" />{{ t('modal.sample') }}
           </button>
 
           <label class="welcome-btn-secondary upload-btn">
-            {{ t('modal.import') }}
+            <Icon name="upload" :size="14" />{{ t('modal.import') }}
             <input id="welcome-input-file" type="file" accept=".json" style="display: none;" @change="handleFileInput" />
           </label>
         </div>

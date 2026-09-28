@@ -90,6 +90,9 @@
       font-size: 1.05rem;
       font-weight: 700;
       color: #f1f5f9;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
     }
 
     .card-hint {
@@ -130,7 +133,6 @@
     }
 
     .welcome-input:focus, .welcome-select:focus {
-      outline: none;
       border-color: var(--accent);
     }
 
@@ -148,6 +150,7 @@
       display: flex;
       justify-content: center;
       align-items: center;
+      gap: 0.4rem;
     }
 
     .welcome-saved-list {
@@ -182,6 +185,9 @@
       font-family: 'JetBrains Mono', monospace;
       font-size: 0.82rem;
       color: #e2e8f0;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
     }
 
     .welcome-file-date {
@@ -199,6 +205,9 @@
       font-size: 0.75rem;
       font-weight: 600;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
     }
 
     .welcome-empty {
@@ -226,7 +235,10 @@
       font-size: 0.8rem;
       cursor: pointer;
       text-align: center;
-      display: block;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
     }
 
     .welcome-btn-secondary:hover {

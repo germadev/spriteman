@@ -1,6 +1,6 @@
 <script :setup="{
   t,
-  currentFrame,
+  selectedFrame,
   totalFrames,
   isPlaying,
   onionSkin,
@@ -8,6 +8,7 @@
   spriteHeight,
   framePixels,
   frameRevisions,
+  frameEpoch,
   animations,
   activeAnimationId,
   layerGroups,
@@ -31,9 +32,12 @@
   onRedo,
   onSelectAnimation,
   onAddAnimation,
-  onRenameAnimation,
+  onRequestRenameAnimation,
   onDeleteAnimation
 }" type="text/typescript">
+  const _d = (module: any) => module?.default ?? module;
+  const Icon = _d(await import('./Icon.html'));
+
   let selectedRange: { start: number; end: number } | null = null;
   let lastClickedFrame = 0;
   let draggingIndex: number | null = null;
@@ -49,8 +53,8 @@
    * bumps whenever that frame changes. The previous key (pixel count + first color)
    * missed edits that repainted a pixel without changing the count.
    */
-  const getThumbnail = (i: number, pixelsMap: any, w: number, h: number, revision: number): string => {
-    const key = `${i}_${w || 64}x${h || 64}_r${revision}`;
+  const getThumbnail = (i: number, pixelsMap: any, w: number, h: number, revision: number, epoch: number): string => {
+    const key = `${epoch || 0}_${i}_${w || 64}x${h || 64}_r${revision}`;
     const cached = thumbCache.get(key);
     if (cached !== undefined) return cached;
 
@@ -91,8 +95,8 @@
     return dataUrl;
   };
 
-  $: activeInt = Math.round(currentFrame || 0);
   $: maxFrames = Math.max(1, totalFrames || 1);
+  $: activeInt = Math.max(0, Math.min(maxFrames - 1, Math.floor(selectedFrame || 0)));
   $: animList = animations || [];
   $: currentGroupList = layerGroups || [];
   $: hasRangeSelection = !!selectedRange && selectedRange.end > selectedRange.start;
@@ -102,12 +106,10 @@
 
   const getAnimIcon = (name: string): string => {
     const lower = (name || '').toLowerCase();
-    if (lower.includes('walk')) return '🚶';
-    if (lower.includes('run')) return '🏃';
-    if (lower.includes('jump')) return '🦘';
-    if (lower.includes('attack') || lower.includes('slash')) return '⚔️';
-    if (lower.includes('hurt') || lower.includes('die')) return '💥';
-    return '🧍';
+    if (lower.includes('walk') || lower.includes('run')) return 'footprints';
+    if (lower.includes('jump') || lower.includes('hurt') || lower.includes('die')) return 'zap';
+    if (lower.includes('attack') || lower.includes('slash')) return 'swords';
+    return 'film';
   };
 
   const handleSelectAnim = (id: string) => {
@@ -115,10 +117,7 @@
   };
 
   const handleRenameAnim = (a: any) => {
-    const newName = prompt(t('timeline.rename_animation_prompt'), a.name || '');
-    if (newName && newName.trim() && a.id) {
-      onRenameAnimation?.(a.id, newName.trim());
-    }
+    if (a.id) onRequestRenameAnimation?.(a.id, a.name || '');
   };
 
   const handleToggleOnion = () => {
@@ -152,7 +151,7 @@
       isIntermediate,
       hasGroupPivot,
       pivotCoords,
-      thumb: getThumbnail(i, framePixels, spriteWidth, spriteHeight, (frameRevisions || [])[i] || 0),
+      thumb: getThumbnail(i, framePixels, spriteWidth, spriteHeight, (frameRevisions || [])[i] || 0, frameEpoch),
       title: isIntermediate
         ? t('timeline.cell_intermediate_title', {
             number: i + 1,
@@ -316,7 +315,7 @@
         @click="handleSelectAnim(a.id)"
         @dblclick="handleRenameAnim(a)"
       >
-        <span class="anim-tab-icon">{{ getAnimIcon(a.name) }}</span>
+        <span class="anim-tab-icon"><Icon :name="getAnimIcon(a.name)" :size="14" /></span>
         <span class="anim-tab-name">{{ a.name }}</span>
         <span class="anim-tab-badge">{{ t('timeline.animation_badge', { frames: a.total_frames }) }}</span>
       </button>
@@ -325,7 +324,7 @@
       class="btn-anim-tab-new"
       :title="t('timeline.new_animation_title')"
       @click="onAddAnimation?.()"
-    >{{ t('timeline.new_animation') }}</button>
+    ><Icon name="plus" :size="13" />{{ t('timeline.new_animation') }}</button>
   </div>
 
   <!-- Timeline Controls Toolbar -->
@@ -337,11 +336,12 @@
         :title="t('timeline.play_title')"
         @click="onTogglePlay?.()"
       >
-        <span :if="isPlaying">{{ t('timeline.pause') }}</span>
-        <span :else>{{ t('timeline.play') }}</span>
+        <Icon :if="isPlaying" name="pause" :size="13" />
+        <Icon :else name="play" :size="13" />
+        <span>{{ isPlaying ? t('timeline.pause') : t('timeline.play') }}</span>
       </button>
-      <button class="btn-tool btn-prev" :title="t('timeline.prev_title')" @click="onStep?.(-1)">⏮</button>
-      <button class="btn-tool btn-next" :title="t('timeline.next_title')" @click="onStep?.(1)">⏭</button>
+      <button class="btn-tool icon-only btn-prev" :title="t('timeline.prev_title')" @click="onStep?.(-1)"><Icon name="skip-back" :size="14" /></button>
+      <button class="btn-tool icon-only btn-next" :title="t('timeline.next_title')" @click="onStep?.(1)"><Icon name="skip-forward" :size="14" /></button>
     </div>
 
     <div class="history-actions-group">
@@ -444,7 +444,7 @@
           @click="onSelectFrame?.(item.group.start_frame)"
         >
           <span class="group-pill-name" :title="t('timeline.group_pill_title', { name: item.group.name || t('timeline.group_default_name'), from: item.group.start_frame + 1, to: item.group.end_frame + 1 })">
-            ⚡ {{ item.group.name || t('timeline.group_default_name') }}
+            <Icon name="zap" :size="12" /> {{ item.group.name || t('timeline.group_default_name') }}
           </span>
           <div class="group-pill-actions">
             <button
@@ -480,11 +480,12 @@
             :key="c.index"
             class="frame-cell in-group group-intermediate"
             :class="{ active: c.index === activeInt, 'in-range-selected': c.isInRange }"
+            :data-frame-index="String(c.index)"
             :title="c.title"
             @click="handleCellClick($event, c.index, true)"
           >
             <span class="cell-num">{{ c.index + 1 }}</span>
-            <span class="cell-intermediate-lock">🔒</span>
+            <span class="cell-intermediate-lock"><Icon name="lock" :size="11" /></span>
             <img class="cell-thumb-canvas" :src="c.thumb" width="44" height="44" alt="Thumb" />
           </button>
         </div>
@@ -502,6 +503,7 @@
           'group-end': item.cell.isGroupEnd,
           'is-dragging': draggingIndex === item.cell.index
         }"
+        :data-frame-index="String(item.cell.index)"
         draggable="true"
         :title="item.cell.title"
         @click="handleCellClick($event, item.cell.index, false)"
@@ -510,7 +512,7 @@
         @dragover="handleCellDragOver($event, item.cell.index)"
       >
         <span class="cell-num">{{ item.cell.index + 1 }}</span>
-        <span :if="item.cell.hasGroupPivot" class="cell-pivot-dot" :title="t('timeline.pivot_title', { coords: item.cell.pivotCoords })">📍</span>
+        <span :if="item.cell.hasGroupPivot" class="cell-pivot-dot" :title="t('timeline.pivot_title', { coords: item.cell.pivotCoords })"><Icon name="map-pin" :size="11" /></span>
         <img class="cell-thumb-canvas" :src="item.cell.thumb" width="44" height="44" alt="Thumb" />
       </button>
     </div>

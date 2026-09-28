@@ -12,6 +12,13 @@
       gap: 0.2rem;
     }
 
+    .tab-title {
+      min-width: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
     .tab-item {
       display: flex;
       align-items: center;
@@ -97,6 +104,9 @@
       font-size: 0.74rem;
       font-weight: 600;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
     }
 
     .topbar-btn.primary {
@@ -114,5 +124,8 @@
       font-size: 0.7rem;
       font-weight: 600;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
     }
 
