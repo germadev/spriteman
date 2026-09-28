@@ -33,7 +33,12 @@ timeline:
   duplicate_title: Duplicate current frame
   delete_title: Delete current frame
   onion_title: Onion skinning
-  group_title: "Group selected frames ({from}..{to}) with a pivot and automatic in-betweens"
+  link_frames_title: "Link frames {from} and {to} with one intermediate frame"
+  group_options_title: Link options
+  intermediate_count: Intermediate frames
+  edit_references: Edit references
+  remove_reference: Remove reference
+  ungroup: Dissolve link
   frame_indicator: "Frame: {current} / {total}"
   new_animation: New animation
   add_animation: Create animation
@@ -44,12 +49,13 @@ timeline:
   new_animation_prompt: "Name for the new animation (e.g. walk, attack, jump):"
   group_default_name: Group
   group_pill_title: "{name} (frames {from}..{to})"
-  group_pivot_title: Place the rotation axis (pivot) on the canvas
+  group_reference_title: Add or edit reference points
+  group_reference_remove_title: Remove the selected reference point
   ungroup_title: Ungroup frames
-  pivot_title: "Pivot: {coords}"
+  references_title: "{count} reference points"
   cell_title: "Frame {number} (Shift+Click to select a range, drag to reorder)"
   cell_in_group_title: "Frame {number} ({group})"
-  cell_in_group_pivot_title: "Frame {number} ({group} • Pivot: {coords})"
+  cell_in_group_references_title: "Frame {number} ({group} • {count} references)"
   cell_intermediate_title: "Frame {number} (auto in-between of {group}, not editable)"
   add_frame_title: Click to append a frame, or drag to insert between existing frames
 

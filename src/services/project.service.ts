@@ -37,6 +37,11 @@ export interface LayerFrameGroup {
   end_frame: number;
   name?: string;
   pivot?: { x: number; y: number };
+  reference_points?: Array<{
+    id: string;
+    start: { x: number; y: number };
+    end: { x: number; y: number };
+  }>;
 }
 
 export interface AnimationClipData {
@@ -168,6 +173,9 @@ class ProjectService {
   private lastHistoryStructural: boolean = true;
   private pixelDragBaseline: Record<string, string> | null = null;
   private draggedPixelInitial: { x: number; y: number; color: string } | null = null;
+  private opacityEditLayerId: string | null = null;
+  private referenceEditKey: string | null = null;
+  private referenceEditSnapshotPending: boolean = false;
 
   public getCompositeFramePixels(frameIndex: number): Record<string, string> {
     const composite: Record<string, string> = {};
@@ -668,8 +676,8 @@ class ProjectService {
    * Inserts a new frame at targetIndex, shifting subsequent keyframes by +1,
    * and copying the preceding frame's content/keyframes by default.
    */
-  public insertFrame(targetIndex: number, copyPrevious = true): number {
-    this.pushUndoSnapshot();
+  public insertFrame(targetIndex: number, copyPrevious = true, recordHistory = true, notify = true): number {
+    if (recordHistory) this.pushUndoSnapshot();
     this.invalidateAllFrames();
     const currentTotal = this.state.meta.total_frames;
     const insertIndex = Math.max(0, Math.min(targetIndex, currentTotal));
@@ -835,7 +843,7 @@ class ProjectService {
     this.state.frame_pixels = nextPixels;
 
     this.updateJson();
-    this.notify();
+    if (notify) this.notify();
     return insertIndex;
   }
 
@@ -882,9 +890,9 @@ class ProjectService {
   /**
    * Deletes the given frame.
    */
-  public deleteFrame(frameIndex: number): void {
+  public deleteFrame(frameIndex: number, recordHistory = true, notify = true): void {
     if (this.state.meta.total_frames <= 1) return;
-    this.pushUndoSnapshot();
+    if (recordHistory) this.pushUndoSnapshot();
     this.invalidateAllFrames();
 
     this.state.layers.forEach((layer) => {
@@ -940,7 +948,7 @@ class ProjectService {
 
     this.state.meta.total_frames -= 1;
     this.updateJson();
-    this.notify();
+    if (notify) this.notify();
   }
 
   /**
@@ -1069,9 +1077,48 @@ class ProjectService {
     const nextOpacity = Math.max(0, Math.min(1, opacity));
     if (layer.default_transform.opacity === nextOpacity) return;
 
-    this.pushUndoSnapshot();
+    if (this.opacityEditLayerId !== layerId) {
+      this.pushUndoSnapshot();
+    }
     layer.default_transform.opacity = nextOpacity;
     this.state.layers = [...this.state.layers];
+    const total = this.state.meta.total_frames || Object.keys(this.state.frame_pixels).length || 1;
+    for (let frameIndex = 0; frameIndex < total; frameIndex++) {
+      this.recomposeFrame(frameIndex);
+    }
+    this.updateJson();
+    this.notify();
+  }
+
+  public previewLayerOpacity(layerId: string, opacity: number, frameIndices: number[]): void {
+    const layer = this.state.layers.find((candidate) => candidate.id === layerId);
+    if (!layer?.default_transform) return;
+
+    const nextOpacity = Math.max(0, Math.min(1, opacity));
+    if (layer.default_transform.opacity === nextOpacity) return;
+
+    layer.default_transform.opacity = nextOpacity;
+    this.state.layers = [...this.state.layers];
+    const total = Math.max(1, this.state.meta.total_frames || 1);
+    const visibleFrames = new Set(
+      frameIndices.filter((frameIndex) => Number.isInteger(frameIndex) && frameIndex >= 0 && frameIndex < total)
+    );
+    for (const frameIndex of visibleFrames) {
+      this.recomposeFrame(frameIndex);
+    }
+    this.updateJson();
+    this.notify();
+  }
+
+  public beginLayerOpacityEdit(layerId: string): void {
+    if (this.opacityEditLayerId === layerId) return;
+    this.pushUndoSnapshot();
+    this.opacityEditLayerId = layerId;
+  }
+
+  public finishLayerOpacityEdit(): void {
+    if (!this.opacityEditLayerId) return;
+    this.opacityEditLayerId = null;
     const total = this.state.meta.total_frames || Object.keys(this.state.frame_pixels).length || 1;
     for (let frameIndex = 0; frameIndex < total; frameIndex++) {
       this.recomposeFrame(frameIndex);
@@ -1422,7 +1469,12 @@ class ProjectService {
    * path. The in-betweens are written into the owning layer, not just into the composite,
    * so they survive a save and a reload.
    */
-  public interpolateMotion(startFrame: number, endFrame: number, layerId?: string | null): void {
+  public interpolateMotion(
+    startFrame: number,
+    endFrame: number,
+    layerId?: string | null,
+    referencePoints?: LayerFrameGroup['reference_points']
+  ): void {
     if (endFrame - startFrame < 2) return;
 
     const targetLayer =
@@ -1457,10 +1509,30 @@ class ProjectService {
 
     const totalSteps = endFrame - startFrame;
 
+    const warpPixel = (x: number, y: number, t: number, fromEnd: boolean): { x: number; y: number } => {
+      if (!referencePoints?.length) {
+        return fromEnd
+          ? { x: x + deltaX * (t - 1), y: y + deltaY * (t - 1) }
+          : { x: x + deltaX * t, y: y + deltaY * t };
+      }
+
+      let weightedX = 0;
+      let weightedY = 0;
+      let totalWeight = 0;
+      for (const point of referencePoints) {
+        const anchor = fromEnd ? point.end : point.start;
+        const distanceSquared = (x - anchor.x) ** 2 + (y - anchor.y) ** 2;
+        const weight = 1 / Math.max(0.01, distanceSquared);
+        const factor = fromEnd ? t - 1 : t;
+        weightedX += (point.end.x - point.start.x) * factor * weight;
+        weightedY += (point.end.y - point.start.y) * factor * weight;
+        totalWeight += weight;
+      }
+      return { x: x + weightedX / totalWeight, y: y + weightedY / totalWeight };
+    };
+
     for (let f = startFrame + 1; f < endFrame; f++) {
       const t = (f - startFrame) / totalSteps;
-      const stepDeltaX = Math.round(deltaX * t);
-      const stepDeltaY = Math.round(deltaY * t);
 
       const interpolated: Record<string, string> = {};
 
@@ -1468,17 +1540,17 @@ class ProjectService {
       if (t <= 0.5 || endCentroid.count === 0) {
         for (const [key, color] of Object.entries(startPixels)) {
           const [x, y] = key.split(',').map(Number);
-          const nx = Math.max(0, Math.min(this.state.meta.canvas_width - 1, x + stepDeltaX));
-          const ny = Math.max(0, Math.min(this.state.meta.canvas_height - 1, y + stepDeltaY));
+          const warped = warpPixel(x, y, t, false);
+          const nx = Math.max(0, Math.min(this.state.meta.canvas_width - 1, Math.round(warped.x)));
+          const ny = Math.max(0, Math.min(this.state.meta.canvas_height - 1, Math.round(warped.y)));
           interpolated[`${nx},${ny}`] = color;
         }
       } else {
-        const endStepDeltaX = Math.round(deltaX * (t - 1));
-        const endStepDeltaY = Math.round(deltaY * (t - 1));
         for (const [key, color] of Object.entries(endPixels)) {
           const [x, y] = key.split(',').map(Number);
-          const nx = Math.max(0, Math.min(this.state.meta.canvas_width - 1, x + endStepDeltaX));
-          const ny = Math.max(0, Math.min(this.state.meta.canvas_height - 1, y + endStepDeltaY));
+          const warped = warpPixel(x, y, t, true);
+          const nx = Math.max(0, Math.min(this.state.meta.canvas_width - 1, Math.round(warped.x)));
+          const ny = Math.max(0, Math.min(this.state.meta.canvas_height - 1, Math.round(warped.y)));
           interpolated[`${nx},${ny}`] = color;
         }
       }
@@ -1543,7 +1615,7 @@ class ProjectService {
       if (!layer.groups) continue;
       for (const grp of layer.groups) {
         if (grp.start_frame === frameIndex || grp.end_frame === frameIndex) {
-          this.interpolateMotion(grp.start_frame, grp.end_frame, layer.id);
+          this.interpolateMotion(grp.start_frame, grp.end_frame, layer.id, grp.reference_points);
         }
       }
     }
@@ -1624,10 +1696,16 @@ class ProjectService {
   }
 
   // --- Layer Frame Groups ---
-  public createFrameGroup(layerId: string, startFrame: number, endFrame: number, name?: string): LayerFrameGroup | null {
+  public createFrameGroup(
+    layerId: string,
+    startFrame: number,
+    endFrame: number,
+    name?: string,
+    recordHistory = true
+  ): LayerFrameGroup | null {
     const layer = this.state.layers.find((l) => l.id === layerId);
     if (!layer) return null;
-    this.pushUndoSnapshot();
+    if (recordHistory) this.pushUndoSnapshot();
     if (!layer.groups) layer.groups = [];
 
     const start = Math.min(startFrame, endFrame);
@@ -1641,6 +1719,7 @@ class ProjectService {
       end_frame: end,
       name: groupName,
       pivot: undefined,
+      reference_points: [],
     };
 
     layer.groups.push(newGroup);
@@ -1654,25 +1733,144 @@ class ProjectService {
     return newGroup;
   }
 
-  public deleteFrameGroup(layerId: string, groupId: string): void {
-    const layer = this.state.layers.find((l) => l.id === layerId);
-    if (!layer || !layer.groups) return;
+  public linkFrames(layerId: string, startFrame: number): LayerFrameGroup | null {
+    const layer = this.state.layers.find((candidate) => candidate.id === layerId);
+    const total = this.state.meta.total_frames;
+    if (!layer || startFrame < 0 || startFrame >= total - 1) return null;
+    if (layer.groups?.some((group) =>
+      startFrame >= group.start_frame && startFrame <= group.end_frame ||
+      startFrame + 1 >= group.start_frame && startFrame + 1 <= group.end_frame
+    )) return null;
+
     this.pushUndoSnapshot();
-    layer.groups = layer.groups.filter((g) => g.id !== groupId);
+    this.insertFrame(startFrame + 1, true, false, false);
+    return this.createFrameGroup(layerId, startFrame, startFrame + 2, undefined, false);
+  }
+
+  public setFrameGroupIntermediateCount(layerId: string, groupId: string, count: number): void {
+    const layer = this.state.layers.find((candidate) => candidate.id === layerId);
+    let group = layer?.groups?.find((candidate) => candidate.id === groupId);
+    if (!layer || !group) return;
+
+    const nextCount = Math.max(1, Math.floor(count));
+    let currentCount = group.end_frame - group.start_frame - 1;
+    if (currentCount === nextCount) return;
+    const hasGeneratedName = /^Grupo \d+\.\.\d+$/.test(group.name || '');
+
+    this.pushUndoSnapshot();
+    while (currentCount < nextCount) {
+      this.insertFrame(group.end_frame, true, false, false);
+      group = layer.groups?.find((candidate) => candidate.id === groupId);
+      if (!group) return;
+      currentCount++;
+    }
+    while (currentCount > nextCount) {
+      this.deleteFrame(group.end_frame - 1, false, false);
+      group = layer.groups?.find((candidate) => candidate.id === groupId);
+      if (!group) return;
+      currentCount--;
+    }
+
+    if (hasGeneratedName) {
+      group.name = `Grupo ${group.start_frame + 1}..${group.end_frame + 1}`;
+    }
+    this.interpolateMotion(group.start_frame, group.end_frame, layerId, group.reference_points);
     this.updateJson();
     this.notify();
   }
 
-  public setGroupPivot(layerId: string, groupId: string, pivotX: number, pivotY: number): void {
+  public deleteFrameGroup(layerId: string, groupId: string): number | null {
     const layer = this.state.layers.find((l) => l.id === layerId);
-    if (!layer || !layer.groups) return;
-    const grp = layer.groups.find((g) => g.id === groupId);
-    if (grp) {
-      this.pushUndoSnapshot();
-      grp.pivot = { x: pivotX, y: pivotY };
-      this.updateJson();
-      this.notify();
+    const group = layer?.groups?.find((candidate) => candidate.id === groupId);
+    if (!layer || !layer.groups || !group) return null;
+
+    const startFrame = group.start_frame;
+    const endFrame = group.end_frame;
+    this.pushUndoSnapshot();
+    layer.groups = layer.groups.filter((g) => g.id !== groupId);
+
+    for (let frameIndex = endFrame - 1; frameIndex > startFrame; frameIndex--) {
+      this.deleteFrame(frameIndex, false, false);
     }
+
+    this.updateJson();
+    this.notify();
+    return startFrame;
+  }
+
+  public addGroupReferencePoint(layerId: string, groupId: string, x: number, y: number): string | null {
+    const layer = this.state.layers.find((candidate) => candidate.id === layerId);
+    const group = layer?.groups?.find((candidate) => candidate.id === groupId);
+    if (!group) return null;
+
+    this.pushUndoSnapshot();
+    const id = `ref_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    this.referenceEditKey = `${layerId}:${groupId}:${id}`;
+    this.referenceEditSnapshotPending = false;
+    group.reference_points = [...(group.reference_points || []), { id, start: { x, y }, end: { x, y } }];
+    group.pivot = undefined;
+    this.interpolateMotion(group.start_frame, group.end_frame, layerId, group.reference_points);
+    this.updateJson();
+    this.notify();
+    return id;
+  }
+
+  public beginGroupReferenceEdit(layerId: string, groupId: string, referenceId: string): boolean {
+    const layer = this.state.layers.find((candidate) => candidate.id === layerId);
+    const point = layer?.groups
+      ?.find((candidate) => candidate.id === groupId)
+      ?.reference_points?.find((candidate) => candidate.id === referenceId);
+    if (!point) return false;
+
+    const key = `${layerId}:${groupId}:${referenceId}`;
+    if (this.referenceEditKey !== key) {
+      this.referenceEditKey = key;
+      this.referenceEditSnapshotPending = true;
+    }
+    return true;
+  }
+
+  public setGroupReferencePoint(
+    layerId: string,
+    groupId: string,
+    referenceId: string,
+    endpoint: 'start' | 'end',
+    x: number,
+    y: number
+  ): void {
+    const layer = this.state.layers.find((candidate) => candidate.id === layerId);
+    const group = layer?.groups?.find((candidate) => candidate.id === groupId);
+    const point = group?.reference_points?.find((candidate) => candidate.id === referenceId);
+    if (!group || !point) return;
+
+    const next = { x, y };
+    if (point[endpoint].x === next.x && point[endpoint].y === next.y) return;
+
+    if (this.referenceEditKey !== `${layerId}:${groupId}:${referenceId}` || this.referenceEditSnapshotPending) {
+      this.pushUndoSnapshot();
+      this.referenceEditSnapshotPending = false;
+    }
+    point[endpoint] = next;
+    this.interpolateMotion(group.start_frame, group.end_frame, layerId, group.reference_points);
+    this.updateJson();
+    this.notify();
+  }
+
+  public finishGroupReferenceEdit(): void {
+    this.referenceEditKey = null;
+    this.referenceEditSnapshotPending = false;
+  }
+
+  public removeGroupReferencePoint(layerId: string, groupId: string, referenceId: string): void {
+    const layer = this.state.layers.find((candidate) => candidate.id === layerId);
+    const group = layer?.groups?.find((candidate) => candidate.id === groupId);
+    if (!group?.reference_points?.some((point) => point.id === referenceId)) return;
+
+    this.pushUndoSnapshot();
+    group.reference_points = group.reference_points.filter((point) => point.id !== referenceId);
+    this.interpolateMotion(group.start_frame, group.end_frame, layerId, group.reference_points);
+    this.updateJson();
+    this.notify();
   }
 
   public getGroupForFrame(layerId: string, frameIndex: number): LayerFrameGroup | null {
@@ -1691,7 +1889,10 @@ class ProjectService {
     if (!layer || !layer.groups) return;
     const grp = layer.groups.find((g) => g.id === groupId);
     if (!grp) return;
-    this.interpolateMotion(grp.start_frame, grp.end_frame, layerId);
+    const legacyReferencePoints = !grp.reference_points?.length && grp.pivot
+      ? [{ id: 'legacy-pivot', start: { ...grp.pivot }, end: { ...grp.pivot } }]
+      : grp.reference_points;
+    this.interpolateMotion(grp.start_frame, grp.end_frame, layerId, legacyReferencePoints);
   }
 
   // --- Multi-Animation Management ---

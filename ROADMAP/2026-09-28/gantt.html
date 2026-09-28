@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spritemotion Roadmap - 2026-09-28</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1020; --panel:#151d2d; --line:#2a3850; --text:#edf4ff; --muted:#9dadc4; --done:#34d399; --next:#38bdf8; --later:#fbbf24; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:32px 20px; background:radial-gradient(circle at top left,#17233b 0,#0b1020 42%); color:var(--text); font-family:"Avenir Next","Segoe UI",sans-serif; }
+    main { max-width:1080px; margin:auto; }
+    header { display:flex; justify-content:space-between; gap:24px; align-items:end; margin-bottom:28px; }
+    h1 { margin:0; font-size:clamp(24px,4vw,38px); letter-spacing:0; }
+    p { color:var(--muted); margin:6px 0 0; }
+    .legend { display:flex; gap:14px; color:var(--muted); font-size:13px; }
+    .legend span::before { content:""; display:inline-block; width:9px; height:9px; margin-right:6px; border-radius:50%; background:var(--color); }
+    .board { border:1px solid var(--line); border-radius:8px; overflow:hidden; background:rgba(21,29,45,.92); box-shadow:0 18px 50px rgba(0,0,0,.3); }
+    .row { display:grid; grid-template-columns:minmax(210px,320px) 1fr; border-bottom:1px solid var(--line); min-height:64px; }
+    .row:last-child { border-bottom:0; }
+    .label { padding:14px 18px; border-right:1px solid var(--line); }
+    .label strong { display:block; font-size:14px; }
+    .label small { display:block; color:var(--muted); margin-top:4px; line-height:1.35; }
+    .track { position:relative; display:grid; grid-template-columns:repeat(5,1fr); align-items:center; padding:10px 12px; background:repeating-linear-gradient(90deg,transparent 0,transparent calc(20% - 1px),rgba(42,56,80,.65) calc(20% - 1px),rgba(42,56,80,.65) 20%); }
+    .bar { z-index:1; grid-column:var(--from)/var(--to); padding:7px 10px; border-radius:5px; color:#071018; font-size:12px; font-weight:800; text-align:center; background:var(--color); }
+    .notes { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; margin-top:18px; }
+    .note { border-left:3px solid var(--color); padding:12px 14px; background:rgba(21,29,45,.7); }
+    .note strong { font-size:13px; }
+    .note p { font-size:12px; line-height:1.5; }
+    @media (max-width:680px) { header { align-items:start; flex-direction:column; } .row { grid-template-columns:150px 1fr; } .label { padding:12px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div><h1>Reference-driven interpolation</h1><p>Spritemotion roadmap snapshot - 2026-09-28</p></div>
+    <div class="legend"><span style="--color:var(--done)">Shipped</span><span style="--color:var(--next)">Next</span><span style="--color:var(--later)">Later</span></div>
+  </header>
+  <section class="board">
+    <div class="row"><div class="label"><strong>Reference data model</strong><small>Paired start/end positions, v2 persistence, legacy pivot compatibility</small></div><div class="track"><div class="bar" style="--from:1;--to:2;--color:var(--done)">shipped</div></div></div>
+    <div class="row"><div class="label"><strong>Weighted deformation</strong><small>Nearby references have greater influence over each pixel</small></div><div class="track"><div class="bar" style="--from:1;--to:2;--color:var(--done)">shipped</div></div></div>
+    <div class="row"><div class="label"><strong>Canvas workflow</strong><small>Add, select, position endpoints, remove, and inspect numbered vectors</small></div><div class="track"><div class="bar" style="--from:1;--to:2;--color:var(--done)">shipped</div></div></div>
+    <div class="row"><div class="label"><strong>Direct marker drag</strong><small>Move existing endpoints without a second click</small></div><div class="track"><div class="bar" style="--from:2;--to:3;--color:var(--next)">next</div></div></div>
+    <div class="row"><div class="label"><strong>Component tests</strong><small>Automate timeline and pointer interaction flows</small></div><div class="track"><div class="bar" style="--from:2;--to:4;--color:var(--next)">next</div></div></div>
+    <div class="row"><div class="label"><strong>Falloff controls</strong><small>Optional influence radius or curve after workflow validation</small></div><div class="track"><div class="bar" style="--from:4;--to:6;--color:var(--later)">later</div></div></div>
+  </section>
+  <section class="notes">
+    <div class="note" style="--color:var(--done)"><strong>Anchor behavior</strong><p>One stationary reference keeps nearby pixels fixed and replaces the old group pivot concept.</p></div>
+    <div class="note" style="--color:var(--next)"><strong>Interaction</strong><p>Edit origins on the first group frame and destinations on the last; intermediate frames remain generated.</p></div>
+    <div class="note" style="--color:var(--later)"><strong>Open direction</strong><p>Rotation, scale, and explicit influence falloff can extend the same reference model later.</p></div>
+  </section>
+</main>
+</body>
+</html>

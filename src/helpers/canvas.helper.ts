@@ -308,3 +308,54 @@ export function drawPivotGizmo(
 
   ctx.restore();
 }
+
+export function drawReferencePoints(
+  ctx: CanvasRenderingContext2D,
+  originX: number,
+  originY: number,
+  points: Array<{ id: string; start: { x: number; y: number }; end: { x: number; y: number } }>,
+  zoom: number,
+  selectedId: string | null,
+  hoveredId: string | null,
+  activeEndpoint: 'start' | 'end' | null
+): void {
+  ctx.save();
+  ctx.font = '700 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  points.forEach((point, index) => {
+    const startX = originX + (point.start.x + 0.5) * zoom;
+    const startY = originY + (point.start.y + 0.5) * zoom;
+    const endX = originX + (point.end.x + 0.5) * zoom;
+    const endY = originY + (point.end.y + 0.5) * zoom;
+    const selected = point.id === selectedId;
+    const gradient = ctx.createLinearGradient(startX, startY, endX, endY);
+    gradient.addColorStop(0, '#0ea5e9');
+    gradient.addColorStop(1, '#e43b44');
+
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = selected ? 2 : 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    for (const [endpoint, x, y, fill] of [['start', startX, startY, '#0ea5e9'], ['end', endX, endY, '#e43b44']] as const) {
+      const hovered = point.id === hoveredId && endpoint === activeEndpoint;
+      ctx.beginPath();
+      ctx.arc(x, y, hovered ? 8 : selected ? 7 : 6, 0, Math.PI * 2);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.strokeStyle = hovered ? '#fef08a' : '#ffffff';
+      ctx.lineWidth = hovered ? 2.5 : 1.5;
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(hovered ? '×' : String(index + 1), x, y + 0.5);
+    }
+  });
+  ctx.restore();
+}

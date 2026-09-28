@@ -8,7 +8,9 @@
   onTogglePivotMode,
   onToggleLayerRelative,
   onToggleLayerVisibility,
+  onBeginLayerOpacityEdit,
   onChangeLayerOpacity,
+  onFinishLayerOpacityEdit,
   onRenameLayer,
   onDeleteLayer,
   onReorderLayer
@@ -22,6 +24,7 @@
   let dropTargetId: string | null = null;
   let dropMode: 'before' | 'after' | 'child' | null = null;
   let openOpacityId: string | null = null;
+  let opacityEditId: string | null = null;
   let opacityDraft = 100;
 
   $: validLayers = (layers || []).filter((l: any) => l && typeof l === 'object');
@@ -83,15 +86,23 @@
     openOpacityId = layer.id;
   };
 
-  const handleOpacityInput = (e: Event) => {
+  const handleOpacityInput = (e: Event, layerId: string) => {
+    if (opacityEditId !== layerId) {
+      opacityEditId = layerId;
+      onBeginLayerOpacityEdit?.(layerId);
+    }
     opacityDraft = parseInt((e.target as HTMLInputElement).value, 10);
-  };
-
-  const commitOpacity = (layerId: string) => {
     onChangeLayerOpacity?.(layerId, opacityDraft / 100);
   };
 
+  const finishOpacityEdit = () => {
+    if (!opacityEditId) return;
+    opacityEditId = null;
+    onFinishLayerOpacityEdit?.();
+  };
+
   const closeOpacityMenu = () => {
+    finishOpacityEdit();
     openOpacityId = null;
   };
 
@@ -201,7 +212,7 @@
         'drop-before': dropTargetId === layer.id && dropMode === 'before',
         'drop-after': dropTargetId === layer.id && dropMode === 'after',
         'drop-child': dropTargetId === layer.id && dropMode === 'child'
-      }" :draggable="renamingId !== layer.id" :title="t('layers.drag_title')"
+      }" :draggable="renamingId !== layer.id && openOpacityId !== layer.id" :title="t('layers.drag_title')"
       @click="handleSelect(layer.id)" @dragstart="handleDragStart($event, layer)" @dragend="handleDragEnd()"
       @dragover="handleDragOver($event, layer)" @dragleave="handleDragLeave($event, layer)"
       @drop="handleDrop($event, layer)">
@@ -276,7 +287,7 @@
             </div>
             <input class="layer-opacity-range" type="range" min="0" max="100" step="1"
               :value="String(opacityDraft)" :aria-label="t('layers.opacity_title')"
-              @input="handleOpacityInput($event)" @change="commitOpacity(layer.id)" />
+              @input="handleOpacityInput($event, layer.id)" @change="finishOpacityEdit()" />
             <div class="layer-opacity-scale"><span>0%</span><span>100%</span></div>
           </div>
         </div>

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spritemotion Reference Drag - 2026-09-28</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0b1020;--panel:#151d2d;--line:#2a3850;--text:#edf4ff;--muted:#9dadc4;--done:#34d399;--next:#38bdf8;--later:#fbbf24}*{box-sizing:border-box}body{margin:0;padding:32px 20px;background:linear-gradient(145deg,#17233b,#0b1020 55%);color:var(--text);font-family:"Avenir Next","Segoe UI",sans-serif}main{max-width:980px;margin:auto}h1{margin:0;font-size:32px;letter-spacing:0}header p{color:var(--muted);margin:6px 0 24px}.board{overflow:hidden;border:1px solid var(--line);border-radius:8px;background:var(--panel)}.row{display:grid;grid-template-columns:minmax(210px,300px) 1fr;min-height:66px;border-bottom:1px solid var(--line)}.row:last-child{border:0}.label{padding:14px 18px;border-right:1px solid var(--line)}.label strong{display:block}.label small{display:block;margin-top:4px;color:var(--muted)}.track{display:grid;grid-template-columns:repeat(4,1fr);align-items:center;padding:10px;background:repeating-linear-gradient(90deg,transparent 0,transparent calc(25% - 1px),var(--line) calc(25% - 1px),var(--line) 25%)}.bar{grid-column:var(--from)/var(--to);padding:7px;border-radius:5px;background:var(--color);color:#071018;text-align:center;font-size:12px;font-weight:800}.legend{display:flex;gap:16px;margin:18px 0;color:var(--muted);font-size:13px}.legend span:before{content:"";display:inline-block;width:9px;height:9px;margin-right:6px;border-radius:50%;background:var(--color)}@media(max-width:620px){.row{grid-template-columns:145px 1fr}.label{padding:12px}}
+  </style>
+</head>
+<body><main>
+  <h1>Reference point interaction</h1>
+  <header><p>Roadmap snapshot - 2026-09-28</p></header>
+  <div class="legend"><span style="--color:var(--done)">Shipped</span><span style="--color:var(--next)">Next</span><span style="--color:var(--later)">Later</span></div>
+  <section class="board">
+    <div class="row"><div class="label"><strong>Direct endpoint drag</strong><small>Origin and destination markers</small></div><div class="track"><div class="bar" style="--from:1;--to:2;--color:var(--done)">shipped</div></div></div>
+    <div class="row"><div class="label"><strong>Gesture isolation</strong><small>No layer movement or painting</small></div><div class="track"><div class="bar" style="--from:1;--to:2;--color:var(--done)">shipped</div></div></div>
+    <div class="row"><div class="label"><strong>Grouped undo</strong><small>One history entry per drag</small></div><div class="track"><div class="bar" style="--from:1;--to:2;--color:var(--done)">shipped</div></div></div>
+    <div class="row"><div class="label"><strong>Pointer integration tests</strong><small>Automated component-level gestures</small></div><div class="track"><div class="bar" style="--from:2;--to:3;--color:var(--next)">next</div></div></div>
+    <div class="row"><div class="label"><strong>Influence controls</strong><small>Optional radius and falloff</small></div><div class="track"><div class="bar" style="--from:3;--to:5;--color:var(--later)">later</div></div></div>
+  </section>
+</main></body>
+</html>

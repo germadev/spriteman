@@ -64,9 +64,54 @@
 
   let currentZoom = 6;
   let selectedFrameIndex = 0;
+  let selectedReferenceId: string | null = null;
+  let activeReferenceDrag: {
+    layerId: string;
+    groupId: string;
+    referenceId: string;
+    endpoint: 'start' | 'end';
+    startedExisting: boolean;
+  } | null = null;
   let activeProjectName = '';
   let isTempSwapped = false;
   let textModalAction: ((value: string) => void) | null = null;
+  let opacityPreviewRequest: number | null = null;
+  let pendingOpacityPreview: { layerId: string; opacity: number } | null = null;
+
+  const flushOpacityPreview = () => {
+    opacityPreviewRequest = null;
+    const preview = pendingOpacityPreview;
+    pendingOpacityPreview = null;
+    if (!preview) return;
+
+    const state = projectService.getState();
+    const animationState = animationService.getState();
+    const totalFrames = Math.max(1, state.meta.total_frames || 1);
+    const currentFrame = getDiscreteFrameIndex(animationState.currentFrame, totalFrames);
+    const visibleFrames = [currentFrame];
+    if (animationState.onionSkinEnabled && totalFrames > 1) {
+      visibleFrames.push((currentFrame - 1 + totalFrames) % totalFrames);
+    }
+    projectService.previewLayerOpacity(preview.layerId, preview.opacity, visibleFrames);
+  };
+
+  const scheduleOpacityPreview = (layerId: string, opacity: number) => {
+    pendingOpacityPreview = { layerId, opacity };
+    if (opacityPreviewRequest === null) {
+      opacityPreviewRequest = requestAnimationFrame(flushOpacityPreview);
+    }
+  };
+
+  const finishOpacityPreview = () => {
+    if (opacityPreviewRequest !== null) {
+      cancelAnimationFrame(opacityPreviewRequest);
+      opacityPreviewRequest = null;
+    }
+    flushOpacityPreview();
+    projectService.finishLayerOpacityEdit();
+    animationService.reloadProject(projectService.getEngineJson());
+    saveCurrentProject();
+  };
 
   const closeTextModal = () => {
     if (textModal?.data) textModal.data.open = false;
@@ -103,18 +148,24 @@
     const activeGroup = projectService.getActiveLayerGroupForFrame(currentInt);
 
     if (activeGroup && isPivot) {
-      const proj = projectService.getState();
-      const p = activeGroup.pivot ?? {
-        x: Math.round(proj.meta.canvas_width / 2),
-        y: Math.round(proj.meta.canvas_height / 2),
-      };
-      canvasService.setPivot(p);
+      const references = activeGroup.reference_points?.length
+        ? activeGroup.reference_points
+        : activeGroup.pivot
+        ? [{ id: 'legacy-pivot', start: { ...activeGroup.pivot }, end: { ...activeGroup.pivot } }]
+        : [];
+      if (selectedReferenceId && !references.some((point: any) => point.id === selectedReferenceId)) {
+        selectedReferenceId = null;
+      }
+      canvasService.setPivot(null);
+      const activeEndpoint = currentInt === activeGroup.start_frame ? 'start' : currentInt === activeGroup.end_frame ? 'end' : null;
+      canvasService.setReferencePoints(references, selectedReferenceId, activeEndpoint);
     } else {
       if (isPivot && !activeGroup) {
         canvasService.setPivotMode(false);
         if (frameStrip?.data) frameStrip.data.isPivotMode = false;
       }
       canvasService.setPivot(null);
+      canvasService.setReferencePoints([], null);
     }
   };
 
@@ -640,16 +691,52 @@
       }
       saveCurrentProject();
     },
-    onSetPivot: (x: number, y: number) => {
+    onStartMoveReference: (x: number, y: number): boolean => {
       const proj = projectService.getState();
       const selectedId = proj.selectedLayerId;
       const currentInt = selectedFrameIndex;
-      if (selectedId) {
-        const group = projectService.getActiveLayerGroupForFrame(currentInt);
-        if (group) {
-          projectService.setGroupPivot(selectedId, group.id, x, y);
-          canvasService.setPivot({ x, y });
-        }
+      if (!selectedId) return false;
+
+      const group = projectService.getActiveLayerGroupForFrame(currentInt);
+      if (!group || (currentInt !== group.start_frame && currentInt !== group.end_frame)) return false;
+
+      const endpoint = currentInt === group.start_frame ? 'start' : 'end';
+      const references = group.reference_points || [];
+      const nearest = references.find((point: any) => {
+        const position = point[endpoint];
+        return (position.x - x) ** 2 + (position.y - y) ** 2 <= 4;
+      });
+
+      let referenceId = nearest?.id;
+      const startedExisting = !!referenceId;
+      if (!referenceId) {
+        referenceId = projectService.addGroupReferencePoint(selectedId, group.id, x, y);
+      }
+      if (!referenceId) return false;
+
+      selectedReferenceId = referenceId;
+      projectService.beginGroupReferenceEdit(selectedId, group.id, referenceId);
+      activeReferenceDrag = { layerId: selectedId, groupId: group.id, referenceId, endpoint, startedExisting };
+      syncPivotState();
+      return true;
+    },
+    onMoveReference: (x: number, y: number, isFinal: boolean, didMove: boolean = true, startedExisting: boolean = true) => {
+      if (!activeReferenceDrag) return;
+      const drag = activeReferenceDrag;
+      if (isFinal && startedExisting && !didMove) {
+        projectService.finishGroupReferenceEdit();
+        projectService.removeGroupReferencePoint(drag.layerId, drag.groupId, drag.referenceId);
+        selectedReferenceId = null;
+        activeReferenceDrag = null;
+        syncPivotState();
+        saveCurrentProject();
+        return;
+      }
+      projectService.setGroupReferencePoint(drag.layerId, drag.groupId, drag.referenceId, drag.endpoint, x, y);
+      syncPivotState();
+      if (isFinal) {
+        projectService.finishGroupReferenceEdit();
+        activeReferenceDrag = null;
         saveCurrentProject();
       }
     },
@@ -761,10 +848,14 @@
       animationService.reloadProject(projectService.getEngineJson());
       saveCurrentProject();
     },
+    onBeginLayerOpacityEdit: (layerId: string) => {
+      projectService.beginLayerOpacityEdit(layerId);
+    },
     onChangeLayerOpacity: (layerId: string, opacity: number) => {
-      projectService.setLayerOpacity(layerId, opacity);
-      animationService.reloadProject(projectService.getEngineJson());
-      saveCurrentProject();
+      scheduleOpacityPreview(layerId, opacity);
+    },
+    onFinishLayerOpacityEdit: () => {
+      finishOpacityPreview();
     },
     onRenameLayer: (layerId: string, name: string) => {
       projectService.renameLayer(layerId, name);
@@ -820,7 +911,6 @@
       animationService.seek(idx);
       syncPivotState();
     },
-    onSelectRange: (start: number, end: number) => {},
     onStep: (delta: number) => {
       animationService.pause();
       const total = Math.max(1, animationService.getState().totalFrames);
@@ -862,33 +952,70 @@
       saveCurrentProject();
     },
     onToggleOnionSkin: (enabled: boolean) => animationService.setOnionSkinEnabled(enabled),
-    onGroupFrames: (start: number, end: number) => {
+    onLinkFrames: (start: number) => {
       const selectedId = projectService.getState().selectedLayerId;
       if (selectedId) {
-        projectService.createFrameGroup(selectedId, start, end);
-        animationService.reloadProject(projectService.getEngineJson());
-        saveCurrentProject();
-        syncPivotState();
+        const group = projectService.linkFrames(selectedId, start);
+        if (group) {
+          animationService.reloadProject(projectService.getEngineJson());
+          selectedFrameIndex = group.start_frame;
+          animationService.seek(group.start_frame);
+          saveCurrentProject();
+          syncPivotState();
+        }
       }
+    },
+    onChangeGroupIntermediateCount: (groupId: string, count: number) => {
+      const selectedId = projectService.getState().selectedLayerId;
+      if (!selectedId) return;
+      projectService.setFrameGroupIntermediateCount(selectedId, groupId, count);
+      animationService.reloadProject(projectService.getEngineJson());
+      const total = Math.max(1, projectService.getState().meta.total_frames);
+      selectedFrameIndex = Math.min(selectedFrameIndex, total - 1);
+      animationService.seek(selectedFrameIndex);
+      saveCurrentProject();
+      syncPivotState();
     },
     onUngroupFrames: (groupId: string) => {
       const selectedId = projectService.getState().selectedLayerId;
       if (selectedId) {
-        projectService.deleteFrameGroup(selectedId, groupId);
+        const startFrame = projectService.deleteFrameGroup(selectedId, groupId);
+        if (startFrame === null) return;
+        canvasService.setPivotMode(false);
+        selectedReferenceId = null;
+        selectedFrameIndex = startFrame;
         animationService.reloadProject(projectService.getEngineJson());
+        animationService.seek(startFrame);
         saveCurrentProject();
         syncPivotState();
       }
     },
-    onToggleGroupPivotMode: () => {
+    onToggleGroupReferenceMode: () => {
       const currentInt = selectedFrameIndex;
       const group = projectService.getActiveLayerGroupForFrame(currentInt);
       if (!group) return;
 
       const next = !canvasService.isPivotMode();
+      selectedReferenceId = null;
       canvasService.setPivotMode(next);
       if (frameStrip?.data) frameStrip.data.isPivotMode = next;
+      if (next && currentInt !== group.start_frame) {
+        selectedFrameIndex = group.start_frame;
+        animationService.seek(group.start_frame);
+      }
       syncPivotState();
+    },
+    onRemoveGroupReferencePoint: (groupId: string) => {
+      const proj = projectService.getState();
+      const selectedId = proj.selectedLayerId;
+      const group = selectedId ? projectService.getActiveLayerGroupForFrame(selectedFrameIndex) : null;
+      const referenceId = selectedReferenceId || group?.reference_points?.at(-1)?.id;
+      if (!selectedId || group?.id !== groupId || !referenceId) return;
+
+      projectService.removeGroupReferencePoint(selectedId, groupId, referenceId);
+      selectedReferenceId = group.reference_points?.filter((point: any) => point.id !== referenceId).at(-1)?.id || null;
+      syncPivotState();
+      saveCurrentProject();
     },
     onSelectAnimation: (animId: string) => {
       projectService.selectAnimation(animId);

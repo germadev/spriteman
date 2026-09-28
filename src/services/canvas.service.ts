@@ -16,6 +16,7 @@ import {
   composePixelBuffer,
   drawClusterOutline,
   drawPivotGizmo,
+  drawReferencePoints,
   drawPixelCursor,
   drawPixelGrid,
   PixelMap,
@@ -65,6 +66,10 @@ class CanvasService {
   private activeLayerPixels: PixelMap | null = null;
   private hoverPixel: { x: number; y: number } | null = null;
   private pivot: { x: number; y: number } | null = null;
+  private referencePoints: Array<{ id: string; start: { x: number; y: number }; end: { x: number; y: number } }> = [];
+  private selectedReferenceId: string | null = null;
+  private hoveredReferenceId: string | null = null;
+  private activeReferenceEndpoint: 'start' | 'end' | null = null;
   private isSettingPivot: boolean = false;
 
   // Offscreen buffers at sprite resolution, rebuilt only when their source changes.
@@ -295,6 +300,39 @@ class CanvasService {
     return this.pivot;
   }
 
+  public setReferencePoints(
+    points: Array<{ id: string; start: { x: number; y: number }; end: { x: number; y: number } }>,
+    selectedId: string | null,
+    activeEndpoint: 'start' | 'end' | null = null
+  ): void {
+    this.referencePoints = points.map((point) => ({
+      id: point.id,
+      start: { ...point.start },
+      end: { ...point.end },
+    }));
+    this.selectedReferenceId = selectedId;
+    this.activeReferenceEndpoint = activeEndpoint;
+    if (!this.referencePoints.some((point) => point.id === this.hoveredReferenceId)) {
+      this.hoveredReferenceId = null;
+    }
+    this.notify();
+  }
+
+  public findReferenceAt(pixel: { x: number; y: number } | null): string | null {
+    if (!pixel || !this.activeReferenceEndpoint) return null;
+    const endpoint = this.activeReferenceEndpoint;
+    return this.referencePoints.find((point) => {
+      const position = point[endpoint];
+      return (position.x - pixel.x) ** 2 + (position.y - pixel.y) ** 2 <= 4;
+    })?.id || null;
+  }
+
+  public setHoveredReference(referenceId: string | null): void {
+    if (this.hoveredReferenceId === referenceId) return;
+    this.hoveredReferenceId = referenceId;
+    this.notify();
+  }
+
   public setPivotMode(enabled: boolean): void {
     if (this.isSettingPivot === enabled) return;
     this.isSettingPivot = enabled;
@@ -440,8 +478,19 @@ class CanvasService {
     ctx.lineWidth = 1;
     ctx.strokeRect(origin.x + 0.5, origin.y + 0.5, boardW - 1, boardH - 1);
 
-    // 5. Rotation axis (pivot) gizmo.
-    if (this.pivot) {
+    // 5. Group reference vectors, or the legacy rotation axis for old documents.
+    if (this.referencePoints.length > 0) {
+      drawReferencePoints(
+        ctx,
+        origin.x,
+        origin.y,
+        this.referencePoints,
+        this.zoom,
+        this.selectedReferenceId,
+        this.hoveredReferenceId,
+        this.activeReferenceEndpoint
+      );
+    } else if (this.pivot) {
       drawPivotGizmo(ctx, origin.x, origin.y, this.pivot.x, this.pivot.y, this.zoom, this.isSettingPivot);
     }
 

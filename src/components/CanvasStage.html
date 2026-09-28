@@ -2,7 +2,8 @@
   t,
   canvasService,
   onPaintStroke,
-  onSetPivot,
+  onStartMoveReference,
+  onMoveReference,
   onStartTranslateLayer,
   onTranslateLayer,
   onStartMovePixel,
@@ -50,6 +51,10 @@
     let isDraggingLoosePixel = false;
     let draggedPixelStart = { x: 0, y: 0 };
     let draggedPixelCurrent = { x: 0, y: 0 };
+    let isDraggingReference = false;
+    let draggedReferenceCurrent = { x: 0, y: 0 };
+    let referenceDragMoved = false;
+    let referenceDragStartedExisting = false;
 
     let isPainting = false;
     let currentPaintColor = '#000000';
@@ -93,7 +98,7 @@
         isCtrlHeld,
         isCmdHeld,
         isAltHeld,
-        isDragging: isMovingLayer || isDraggingLoosePixel || isMousePanning,
+        isDragging: isMovingLayer || isDraggingLoosePixel || isDraggingReference || isMousePanning,
       });
     };
 
@@ -104,7 +109,9 @@
 
     const updateCursor = () => {
       let next = 'crosshair';
-      if (isMovingLayer || isShiftHeld) {
+      if (isDraggingReference) {
+        next = 'grabbing';
+      } else if (isMovingLayer || isShiftHeld) {
         next = isMovingLayer ? 'grabbing' : 'move';
       } else if (isDraggingLoosePixel) {
         next = 'grabbing';
@@ -115,7 +122,7 @@
       } else if (isSpaceHeld || isMousePanning) {
         next = isMousePanning ? 'grabbing' : 'grab';
       } else if (canvasService.isPivotMode()) {
-        next = 'pointer';
+        next = canvasService.findReferenceAt(canvasService.getHoverPixel()) ? 'grab' : 'copy';
       }
       if (next !== appliedCursor) {
         appliedCursor = next;
@@ -324,6 +331,21 @@
       isCmdHeld = e.metaKey;
       isAltHeld = e.altKey;
 
+      // Reference editing owns the primary pointer gesture while active.
+      if (canvasService.isPivotMode() && e.button === 0) {
+        e.preventDefault();
+        const pixel = canvasService.getSpritePixelAtPointer(e.clientX, e.clientY, viewRect);
+        const existingReferenceId = canvasService.findReferenceAt(pixel);
+        if (pixel && onStartMoveReference?.(pixel.x, pixel.y) !== false) {
+          isDraggingReference = true;
+          draggedReferenceCurrent = { x: pixel.x, y: pixel.y };
+          referenceDragMoved = false;
+          referenceDragStartedExisting = !!existingReferenceId;
+          updateCursor();
+        }
+        return;
+      }
+
       // 1. SHIFT: drag the layer contents
       if (isShiftHeld && e.button === 0) {
         e.preventDefault();
@@ -359,16 +381,6 @@
         }
       }
 
-      if (canvasService.isPivotMode() && e.button === 0) {
-        e.preventDefault();
-        const pixel = canvasService.getSpritePixelAtPointer(e.clientX, e.clientY, viewRect);
-        if (pixel) {
-          canvasService.setPivot({ x: pixel.x, y: pixel.y });
-          onSetPivot?.(pixel.x, pixel.y);
-        }
-        return;
-      }
-
       if (e.button === 0 || e.button === 2) {
         e.preventDefault();
         const pixel = canvasService.getSpritePixelAtPointer(e.clientX, e.clientY, viewRect);
@@ -388,6 +400,16 @@
       isCtrlHeld = e.ctrlKey;
       isCmdHeld = e.metaKey;
       isAltHeld = e.altKey;
+
+      if (isDraggingReference) {
+        const pixel = canvasService.getSpritePixelAtPointer(e.clientX, e.clientY, viewRect);
+        if (pixel && (pixel.x !== draggedReferenceCurrent.x || pixel.y !== draggedReferenceCurrent.y)) {
+          draggedReferenceCurrent = { x: pixel.x, y: pixel.y };
+          referenceDragMoved = true;
+          onMoveReference?.(pixel.x, pixel.y, false);
+        }
+        return;
+      }
 
       if (isMovingLayer) {
         const z = canvasService.getZoom();
@@ -427,11 +449,18 @@
         return;
       }
 
-      canvasService.setHoverPixel(canvasService.getSpritePixelAtPointer(e.clientX, e.clientY, viewRect));
+      const hoverPixel = canvasService.getSpritePixelAtPointer(e.clientX, e.clientY, viewRect);
+      canvasService.setHoverPixel(hoverPixel);
+      canvasService.setHoveredReference(canvasService.isPivotMode() ? canvasService.findReferenceAt(hoverPixel) : null);
       updateCursor();
     }, listen);
 
     root.addEventListener('mouseleave', () => {
+      if (isDraggingReference) {
+        isDraggingReference = false;
+        onMoveReference?.(draggedReferenceCurrent.x, draggedReferenceCurrent.y, true, true, referenceDragStartedExisting);
+        updateCursor();
+      }
       if (isMovingLayer) {
         isMovingLayer = false;
         onTranslateLayer?.(0, 0, true);
@@ -444,10 +473,21 @@
         updateCursor();
       }
       canvasService.setHoverPixel(null);
+      canvasService.setHoveredReference(null);
     }, listen);
 
     window.addEventListener('mouseup', () => {
       isMouseDown = false;
+      if (isDraggingReference) {
+        isDraggingReference = false;
+        onMoveReference?.(
+          draggedReferenceCurrent.x,
+          draggedReferenceCurrent.y,
+          true,
+          referenceDragMoved,
+          referenceDragStartedExisting
+        );
+      }
       if (isMovingLayer) {
         isMovingLayer = false;
         onTranslateLayer?.(0, 0, true);

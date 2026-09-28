@@ -44,7 +44,10 @@ derived from anything else.
       "total_frames": 8,
       "layer_groups": { "layer_base": [ { "id": "grp_1", "layer_id": "layer_base",
                                           "start_frame": 0, "end_frame": 4,
-                                          "pivot": { "x": 32, "y": 40 } } ] },
+                                          "reference_points": [
+                                            { "id": "ref_1", "start": { "x": 32, "y": 40 },
+                                              "end": { "x": 35, "y": 38 } }
+                                          ] } ] },
       "cels": {
         "layer_base": {
           "0": { "p": ["#3a5f8a", "#e43b44"], "r": [128, 0, 4, 1, 2, 2, 3962, 0] }
@@ -66,6 +69,12 @@ engine deserializes, so it can be handed to the engine as-is.
 
 Each clip owns its own timing, its interpolation groups and, in `cels`, its own artwork.
 Nothing outside a clip holds pixels, so painting in one clip cannot affect another.
+
+Each interpolation group may contain `reference_points`. A point pairs one coordinate
+on the group's start frame with one coordinate on its end frame. Intermediate pixels
+blend the displacement of nearby references with inverse-distance weighting. One
+stationary reference acts as a fixed anchor. The legacy group-level `pivot` field is
+still read as a stationary reference for backward compatibility.
 
 ### `cels` — the artwork
 

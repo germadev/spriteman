@@ -17,7 +17,6 @@
   canUndo,
   canRedo,
   onSelectFrame,
-  onSelectRange,
   onAddFrame,
   onReorderFrame,
   onDuplicateFrame,
@@ -25,9 +24,11 @@
   onTogglePlay,
   onToggleOnionSkin,
   onStep,
-  onGroupFrames,
+  onLinkFrames,
+  onChangeGroupIntermediateCount,
   onUngroupFrames,
-  onToggleGroupPivotMode,
+  onToggleGroupReferenceMode,
+  onRemoveGroupReferencePoint,
   onUndo,
   onRedo,
   onSelectAnimation,
@@ -38,11 +39,12 @@
   const _d = (module: any) => module?.default ?? module;
   const Icon = _d(await import('./Icon.html'));
 
-  let selectedRange: { start: number; end: number } | null = null;
-  let lastClickedFrame = 0;
   let draggingIndex: number | null = null;
   let isDraggingNew = false;
   let insertSlotIndex: number | null = null;
+  let openFrameCountGroupId: string | null = null;
+  let openFrameCountValue = 1;
+  let frameCountDropupStyle = '';
 
   // Thumbnail canvas & memoization
   let thumbCanvas: HTMLCanvasElement | null = null;
@@ -99,9 +101,6 @@
   $: activeInt = Math.max(0, Math.min(maxFrames - 1, Math.floor(selectedFrame || 0)));
   $: animList = animations || [];
   $: currentGroupList = layerGroups || [];
-  $: hasRangeSelection = !!selectedRange && selectedRange.end > selectedRange.start;
-  $: rangeStart = selectedRange ? selectedRange.start : 0;
-  $: rangeEnd = selectedRange ? selectedRange.end : 0;
   $: frameIndicatorText = t('timeline.frame_indicator', { current: activeInt + 1, total: maxFrames });
 
   const getAnimIcon = (name: string): string => {
@@ -124,44 +123,41 @@
     onToggleOnionSkin?.(!onionSkin);
   };
 
-  const handleGroupSelection = () => {
-    if (selectedRange) {
-      const s = selectedRange.start;
-      const e = selectedRange.end;
-      selectedRange = null;
-      onGroupFrames?.(s, e);
-    }
-  };
-
   // Build reactive reel items
+  const canLinkBetween = (startIndex: number): boolean =>
+    startIndex >= 0 &&
+    startIndex < maxFrames - 1 &&
+    !currentGroupList.some((group: any) =>
+      (startIndex >= group.start_frame && startIndex <= group.end_frame) ||
+      (startIndex + 1 >= group.start_frame && startIndex + 1 <= group.end_frame)
+    );
+
   const buildCellData = (i: number, cellGroup: any, isIntermediate: boolean) => {
-    const isInRange = hasRangeSelection && i >= rangeStart && i <= rangeEnd;
     const inGroup = !!cellGroup;
     const isGroupStart = inGroup && i === cellGroup.start_frame;
     const isGroupEnd = inGroup && i === cellGroup.end_frame;
-    const hasGroupPivot = inGroup && !!cellGroup.pivot;
-    const pivotCoords = hasGroupPivot ? `[${cellGroup.pivot.x}, ${cellGroup.pivot.y}]` : '';
+    const referenceCount = inGroup ? (cellGroup.reference_points?.length || (cellGroup.pivot ? 1 : 0)) : 0;
 
     return {
       index: i,
-      isInRange,
       inGroup,
       isGroupStart,
       isGroupEnd,
       isIntermediate,
-      hasGroupPivot,
-      pivotCoords,
+      referenceCount,
+      canLinkBefore: canLinkBetween(i - 1),
+      canLinkAfter: canLinkBetween(i),
       thumb: getThumbnail(i, framePixels, spriteWidth, spriteHeight, (frameRevisions || [])[i] || 0, frameEpoch),
       title: isIntermediate
         ? t('timeline.cell_intermediate_title', {
             number: i + 1,
             group: cellGroup?.name || t('timeline.group_default_name'),
           })
-        : inGroup && hasGroupPivot
-        ? t('timeline.cell_in_group_pivot_title', {
+        : inGroup && referenceCount > 0
+        ? t('timeline.cell_in_group_references_title', {
             number: i + 1,
             group: cellGroup?.name || t('timeline.group_default_name'),
-            coords: pivotCoords,
+          count: referenceCount,
           })
         : inGroup
         ? t('timeline.cell_in_group_title', {
@@ -192,7 +188,9 @@
           key: `grp_${matchingGroup.id}`,
           group: matchingGroup,
           isGroupActive: activeGroup?.id === matchingGroup.id,
-          cells: intermediateCells
+          cells: intermediateCells,
+          middleCell: intermediateCells[Math.floor(intermediateCells.length / 2)],
+          stackCards: Array.from({ length: Math.min(3, intermediateCells.length) }, (_, index) => index)
         });
       } else {
         const cellGroup = currentGroupList.find((g: any) => idx >= g.start_frame && idx <= g.end_frame);
@@ -207,20 +205,52 @@
     return items;
   })();
 
-  const handleCellClick = (e: MouseEvent, i: number, isIntermediate: boolean) => {
+  const handleCellClick = (i: number) => {
     if (draggingIndex !== null || isDraggingNew) return;
+    onSelectFrame?.(i);
+  };
 
-    if (e.shiftKey && !isIntermediate) {
-      const start = Math.min(lastClickedFrame, i);
-      const end = Math.max(lastClickedFrame, i);
-      selectedRange = { start, end };
-      onSelectRange?.(start, end);
-      onSelectFrame?.(i);
-    } else {
-      selectedRange = null;
-      lastClickedFrame = i;
-      onSelectFrame?.(i);
+  const openIntermediateCount = (e: Event, groupId: string, currentValue: number) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    openFrameCountGroupId = groupId;
+    openFrameCountValue = currentValue;
+    frameCountDropupStyle = `left: ${rect.left + rect.width / 2}px; top: ${rect.top - 5}px;`;
+    window.setTimeout(() => {
+      const input = document.querySelector('.group-frame-count-dropup-input') as HTMLInputElement | null;
+      input?.focus();
+      input?.select();
+    }, 0);
+  };
+
+  const commitIntermediateCount = (close = false) => {
+    if (!openFrameCountGroupId) return;
+    openFrameCountValue = Math.max(1, Math.min(120, Math.floor(openFrameCountValue) || 1));
+    onChangeGroupIntermediateCount?.(openFrameCountGroupId, openFrameCountValue);
+    if (close) openFrameCountGroupId = null;
+  };
+
+  const adjustIntermediateCount = (delta: number) => {
+    openFrameCountValue = Math.max(1, Math.min(120, openFrameCountValue + delta));
+  };
+
+  const handleDropupCountInput = (e: Event) => {
+    openFrameCountValue = parseInt((e.target as HTMLInputElement).value, 10) || 1;
+  };
+
+  const handleIntermediateCountKeydown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      commitIntermediateCount(true);
+    } else if (e.key === 'Escape') {
+      openFrameCountGroupId = null;
     }
+  };
+
+  const handleEditReferences = () => {
+    onToggleGroupReferenceMode?.();
+  };
+
+  const handleUngroup = (groupId: string) => {
+    onUngroupFrames?.(groupId);
   };
 
   // Drag and drop handlers
@@ -256,8 +286,31 @@
     insertSlotIndex = isRightHalf ? i + 1 : i;
   };
 
+  const handleCellDrop = (e: DragEvent, i: number) => {
+    const target = e.currentTarget as HTMLElement;
+    const rect = target.getBoundingClientRect();
+    const slot = e.clientX > rect.left + rect.width / 2 ? i + 1 : i;
+    insertSlotIndex = slot;
+    handleDrop(e, slot);
+  };
+
   const handleReelDragOver = (e: DragEvent) => {
     e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = isDraggingNew ? 'copy' : 'move';
+    const reel = e.currentTarget as HTMLElement;
+    const cells = Array.from(reel.querySelectorAll<HTMLElement>('.frame-cell[data-frame-index]'));
+    let nearestSlot = totalFrames || 1;
+    for (const cell of cells) {
+      const frameIndex = parseInt(cell.dataset.frameIndex || '', 10);
+      if (!Number.isFinite(frameIndex)) continue;
+      const rect = cell.getBoundingClientRect();
+      if (e.clientX <= rect.left + rect.width / 2) {
+        nearestSlot = frameIndex;
+        break;
+      }
+      nearestSlot = frameIndex + 1;
+    }
+    insertSlotIndex = nearestSlot;
   };
 
   const handleReelDragLeave = (e: DragEvent) => {
@@ -267,9 +320,10 @@
     }
   };
 
-  const handleDrop = (e: DragEvent) => {
+  const handleDrop = (e: DragEvent, resolvedSlot?: number) => {
     e.preventDefault();
-    const insertAt = insertSlotIndex;
+    e.stopPropagation();
+    const insertAt = typeof resolvedSlot === 'number' ? resolvedSlot : insertSlotIndex;
     let dragData: { type: string; fromIndex?: number } | null = null;
     try {
       const raw = e.dataTransfer?.getData('application/json');
@@ -408,18 +462,6 @@
         </svg>
       </button>
 
-      <button
-        :if="hasRangeSelection"
-        class="btn-tool icon-only btn-group-selection primary"
-        :title="t('timeline.group_title', { from: rangeStart + 1, to: rangeEnd + 1 })"
-        @click="handleGroupSelection()"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-          <polyline points="3.29 7 12 12 20.71 7"></polyline>
-          <line x1="12" y1="22" x2="12" y2="12"></line>
-        </svg>
-      </button>
     </div>
 
     <div class="frame-indicator">
@@ -435,7 +477,11 @@
     @dragleave="handleReelDragLeave($event)"
     @drop="handleDrop($event)"
   >
-    <div :each="item in reelItems" :key="item.key">
+    <div :each="item in reelItems" :key="item.key" class="reel-item"
+      :class="{
+        'drop-slot-before': item.type === 'single' && insertSlotIndex === item.cell.index,
+        'drop-slot-after': item.type === 'single' && insertSlotIndex === item.cell.index + 1
+      }">
       <!-- Group intermediate block -->
       <div :if="item.type === 'group'" class="group-intermediate-wrapper">
         <div
@@ -443,51 +489,42 @@
           :class="{ active: item.isGroupActive }"
           @click="onSelectFrame?.(item.group.start_frame)"
         >
-          <span class="group-pill-name" :title="t('timeline.group_pill_title', { name: item.group.name || t('timeline.group_default_name'), from: item.group.start_frame + 1, to: item.group.end_frame + 1 })">
-            <Icon name="zap" :size="12" /> {{ item.group.name || t('timeline.group_default_name') }}
+          <span class="group-pill-zap" :title="t('timeline.group_pill_title', { name: item.group.name || t('timeline.group_default_name'), from: item.group.start_frame + 1, to: item.group.end_frame + 1 })">
+            <Icon name="zap" :size="12" />
           </span>
           <div class="group-pill-actions">
             <button
-              class="btn-group-action btn-group-pivot"
+              class="btn-group-action btn-group-reference"
               :class="{ active: isPivotMode && item.isGroupActive }"
-              :title="t('timeline.group_pivot_title')"
-              @click.stop="onToggleGroupPivotMode?.()"
+              :title="t('timeline.edit_references')"
+              @click.stop="handleEditReferences()"
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="3"></circle>
-                <line x1="12" y1="2" x2="12" y2="6"></line>
-                <line x1="12" y1="18" x2="12" y2="22"></line>
-                <line x1="2" y1="12" x2="6" y2="12"></line>
-                <line x1="18" y1="12" x2="22" y2="12"></line>
-              </svg>
+              <Icon name="map-pin" :size="12" />
             </button>
-            <button
-              class="btn-group-action btn-group-ungroup"
-              :title="t('timeline.ungroup_title')"
-              @click.stop="onUngroupFrames?.(item.group.id)"
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
+            <span class="group-frame-count-control">
+            <button class="group-frame-count-trigger" type="button"
+              :title="t('timeline.intermediate_count')"
+              @click.stop="openIntermediateCount($event, item.group.id, item.group.end_frame - item.group.start_frame - 1)">
+              {{ item.group.end_frame - item.group.start_frame - 1 }}
+            </button>
+            </span>
+            <button type="button" class="btn-group-action btn-group-ungroup" :title="t('timeline.ungroup')"
+              @click.stop="handleUngroup(item.group.id)">
+              <Icon name="x" :size="12" />
             </button>
           </div>
         </div>
 
-        <div class="group-intermediate-cells">
-          <button
-            :each="c in item.cells"
-            :key="c.index"
-            class="frame-cell in-group group-intermediate"
-            :class="{ active: c.index === activeInt, 'in-range-selected': c.isInRange }"
-            :data-frame-index="String(c.index)"
-            :title="c.title"
-            @click="handleCellClick($event, c.index, true)"
+        <div class="group-intermediate-stack" :class="`stack-${item.stackCards.length}`"
+          :title="item.middleCell.title">
+          <div
+            :each="stackIndex in item.stackCards"
+            :key="stackIndex"
+            class="group-stack-card"
+            :class="{ active: activeInt > item.group.start_frame && activeInt < item.group.end_frame }"
           >
-            <span class="cell-num">{{ c.index + 1 }}</span>
-            <span class="cell-intermediate-lock"><Icon name="lock" :size="11" /></span>
-            <img class="cell-thumb-canvas" :src="c.thumb" width="44" height="44" alt="Thumb" />
-          </button>
+            <img class="cell-thumb-canvas" :src="item.middleCell.thumb" width="44" height="44" alt="Thumb" />
+          </div>
         </div>
       </div>
 
@@ -497,7 +534,6 @@
         class="frame-cell"
         :class="{
           active: item.cell.index === activeInt,
-          'in-range-selected': item.cell.isInRange,
           'in-group': item.cell.inGroup,
           'group-start': item.cell.isGroupStart,
           'group-end': item.cell.isGroupEnd,
@@ -506,19 +542,29 @@
         :data-frame-index="String(item.cell.index)"
         draggable="true"
         :title="item.cell.title"
-        @click="handleCellClick($event, item.cell.index, false)"
+        @click="handleCellClick(item.cell.index)"
         @dragstart="handleCellDragStart($event, item.cell.index)"
         @dragend="cleanupDrag()"
         @dragover="handleCellDragOver($event, item.cell.index)"
+        @drop="handleCellDrop($event, item.cell.index)"
       >
         <span class="cell-num">{{ item.cell.index + 1 }}</span>
-        <span :if="item.cell.hasGroupPivot" class="cell-pivot-dot" :title="t('timeline.pivot_title', { coords: item.cell.pivotCoords })"><Icon name="map-pin" :size="11" /></span>
+        <span :if="item.cell.referenceCount > 0" class="cell-pivot-dot" :title="t('timeline.references_title', { count: item.cell.referenceCount })"><Icon name="map-pin" :size="11" /></span>
         <img class="cell-thumb-canvas" :src="item.cell.thumb" width="44" height="44" alt="Thumb" />
       </button>
+      <button :if="item.type === 'single' && item.cell.canLinkBefore" type="button"
+        class="frame-link-button frame-link-before"
+        :title="t('timeline.link_frames_title', { from: item.cell.index, to: item.cell.index + 1 })"
+        @click.stop="onLinkFrames?.(item.cell.index - 1)">
+        <Icon name="link" :size="12" />
+      </button>
+      <button :if="item.type === 'single' && item.cell.canLinkAfter" type="button" class="frame-link-button"
+        :class="{ 'frame-link-after': true }"
+        :title="t('timeline.link_frames_title', { from: item.cell.index + 1, to: item.cell.index + 2 })"
+        @click.stop="onLinkFrames?.(item.cell.index)">
+        <Icon name="link" :size="12" />
+      </button>
     </div>
-
-    <!-- Drag insertion slot indicator -->
-    <div :if="insertSlotIndex !== null" class="frame-insert-slot"></div>
 
     <!-- Append / Drag New Cell -->
     <button
@@ -530,7 +576,6 @@
       @dragstart="handleNewDragStart($event)"
       @dragend="cleanupDrag()"
     >
-      <span class="cell-num">+</span>
       <div class="cell-preview-thumb cell-new-thumb">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
           <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -538,5 +583,16 @@
         </svg>
       </div>
     </button>
+  </div>
+
+  <div :if="!!openFrameCountGroupId" class="group-frame-count-backdrop" @click="commitIntermediateCount(true)"></div>
+  <div :if="!!openFrameCountGroupId" class="group-frame-count-dropup" :style="frameCountDropupStyle" @click.stop>
+    <button type="button" :disabled="openFrameCountValue <= 1"
+      @click.stop="adjustIntermediateCount(-1)" aria-label="-">−</button>
+    <input class="group-frame-count-dropup-input" type="number" min="1" max="120" inputmode="numeric"
+      :value="String(openFrameCountValue)" @input="handleDropupCountInput($event)"
+      @keydown="handleIntermediateCountKeydown($event)" />
+    <button type="button" :disabled="openFrameCountValue >= 120"
+      @click.stop="adjustIntermediateCount(1)" aria-label="+">+</button>
   </div>
 </div>

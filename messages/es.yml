@@ -33,7 +33,12 @@ timeline:
   duplicate_title: Duplicar el fotograma actual
   delete_title: Eliminar el fotograma actual
   onion_title: Papel cebolla
-  group_title: "Agrupar los fotogramas seleccionados ({from}..{to}) con pivote e interpolación automática"
+  link_frames_title: "Vincular los cuadros {from} y {to} con un cuadro intermedio"
+  group_options_title: Opciones del vínculo
+  intermediate_count: Cuadros intermedios
+  edit_references: Editar referencias
+  remove_reference: Quitar referencia
+  ungroup: Disolver vínculo
   frame_indicator: "Fotograma: {current} / {total}"
   new_animation: Nueva animación
   add_animation: Crear animación
@@ -44,12 +49,13 @@ timeline:
   new_animation_prompt: "Nombre de la nueva animación (p. ej. walk, attack, jump):"
   group_default_name: Grupo
   group_pill_title: "{name} (fotogramas {from}..{to})"
-  group_pivot_title: Colocar el eje de giro (pivote) en el lienzo
+  group_reference_title: Añadir o editar puntos de referencia
+  group_reference_remove_title: Quitar el punto de referencia seleccionado
   ungroup_title: Desagrupar fotogramas
-  pivot_title: "Pivote: {coords}"
+  references_title: "{count} puntos de referencia"
   cell_title: "Fotograma {number} (Mayús+clic para seleccionar un rango, arrastra para reordenar)"
   cell_in_group_title: "Fotograma {number} ({group})"
-  cell_in_group_pivot_title: "Fotograma {number} ({group} • Pivote: {coords})"
+  cell_in_group_references_title: "Fotograma {number} ({group} • {count} referencias)"
   cell_intermediate_title: "Fotograma {number} (intermedio automático de {group}, no editable)"
   add_frame_title: Clic para añadir un fotograma al final, o arrastra para insertarlo entre otros
 
