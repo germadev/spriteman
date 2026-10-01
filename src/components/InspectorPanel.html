@@ -4,16 +4,13 @@
   $: ty = item?.matrix ? item.matrix[5].toFixed(1) : '0.0';
 </script>
 
-<div class="inspector-panel">
+<div class="inspector-panel" :aria-label="t('inspector.title')">
   <div :if="!item">
-    <div class="panel-header">
-      <span class="panel-title">{{ t('inspector.title') }}</span>
-    </div>
     <div class="panel-empty">{{ t('inspector.empty') }}</div>
   </div>
   <div :else>
     <div class="panel-header">
-      <span class="panel-title">{{ t('inspector.title_for', { name: item.layer_name }) }}</span>
+      <span>{{ item.layer_name }}</span>
       <span class="badge">{{ t('inspector.z_index', { value: item.z_index }) }}</span>
     </div>
     <div class="inspector-props">

@@ -18,9 +18,37 @@ app:
   install: Instalar app
 
 canvas:
+  tools: Herramientas de pintura
+  paint_group: Color y formas
+  shapes: Formas
+  pencil: Lápiz
+  fill: Rellenar área contigua
+  picker: Cuentagotas
+  line: Línea
+  rectangle: Rectángulo
+  circle: Círculo
+  triangle: Triángulo
+  selection: Selección rectangular
+  replace: Sustituir color (clic en el color de origen)
+  filled: Forma rellena
+  copy: Copiar selección
+  cut: Cortar selección
+  paste: Pegar en la selección
+  delete_selection: Borrar selección
+  scope: Aplicar a
+  active_layer: Capa activa
+  all_layers: Todas las capas del cuadro
+  symmetry: Simetría
+  mirror_horizontal: Reflejar horizontalmente en zonas vacías
+  mirror_vertical: Reflejar verticalmente en zonas vacías
   reset: Centrar vista
   reset_title: Recentrar la vista (doble clic)
-  hint: "Mayús: mover capa • Ctrl: mover píxel • Espacio: desplazar • Ctrl+Rueda: zoom"
+  hint: "Shift: capa • Ctrl: mover • Espacio: desplazar • Ctrl+Rueda: zoom"
+  mode_controls: Objetivo y acción del canvas
+  layer_mode: Capa
+  layer_mode_title: "Capa en vez de píxel (Shift)"
+  move_mode: Mover
+  move_mode_title: "Mover en vez de pintar (Ctrl)"
 
 timeline:
   play: Reproducir
@@ -61,6 +89,8 @@ timeline:
 
 layers:
   title: Jerarquía de capas
+  all: Todas
+  select_all: Seleccionar todas las capas
   count: "{count} capas"
   add: Añadir capa
   add_title: Añadir una capa nueva

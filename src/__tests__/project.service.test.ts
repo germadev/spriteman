@@ -83,6 +83,55 @@ describe('history', () => {
     expect(projectService.undo()).toBe(true);
     expect(projectService.getFrameComposite(0)['4,4']).toBeUndefined();
   });
+
+  it('transforms one or all layers of one frame as one undoable edit', () => {
+    projectService.setPixels(0, [{ x: 1, y: 1 }], '#111');
+    const otherId = projectService.addLayer('Other');
+    projectService.setPixels(0, [{ x: 2, y: 1 }], '#111', otherId);
+    projectService.addFrame(false);
+    projectService.setPixels(1, [{ x: 2, y: 1 }], '#111', otherId);
+    projectService.clearHistory();
+
+    expect(projectService.transformFramePixels(0, 'all', (pixels) =>
+      Object.fromEntries(Object.entries(pixels).map(([key, color]) => [key, color === '#111' ? '#222' : color]))
+    )).toBe(true);
+    expect(projectService.getState().layers.every((layer) =>
+      Object.values(layer.frame_pixels?.[0] || {}).includes('#222'))).toBe(true);
+    expect(projectService.getState().layers.find((layer) => layer.id === otherId)?.frame_pixels?.[1]['2,1']).toBe('#111');
+    expect(projectService.undo()).toBe(true);
+    expect(projectService.getState().layers.every((layer) =>
+      Object.values(layer.frame_pixels?.[0] || {}).includes('#111'))).toBe(true);
+    expect(projectService.canUndo()).toBe(false);
+    expect(projectService.redo()).toBe(true);
+    expect(projectService.getState().layers.every((layer) =>
+      Object.values(layer.frame_pixels?.[0] || {}).includes('#222'))).toBe(true);
+  });
+
+  it('limits an active-layer transform to the selected layer', () => {
+    projectService.setPixels(0, [{ x: 1, y: 1 }], '#111');
+    const otherId = projectService.addLayer('Other');
+    projectService.setPixels(0, [{ x: 2, y: 1 }], '#111', otherId);
+    projectService.clearHistory();
+    const selectedId = projectService.getState().selectedLayerId;
+    expect(projectService.transformFramePixels(0, 'active', (pixels) =>
+      Object.fromEntries(Object.entries(pixels).map(([key]) => [key, '#222']))
+    )).toBe(true);
+    expect(projectService.getState().layers.find((layer) => layer.id === selectedId)?.frame_pixels?.[0]['2,1']).toBe('#222');
+    expect(projectService.getState().layers.find((layer) => layer.id !== selectedId)?.frame_pixels?.[0]['1,1']).toBe('#111');
+    expect(projectService.undo()).toBe(true);
+    expect(projectService.canUndo()).toBe(false);
+  });
+
+  it('does not transform auto-generated intermediate frames', () => {
+    projectService.setPixels(0, [{ x: 1, y: 1 }], '#111');
+    projectService.setPixels(2, [{ x: 1, y: 1 }], '#111');
+    projectService.createFrameGroup('layer_base', 0, 2, 'Linked');
+    const before = { ...projectService.getState().layers[0].frame_pixels?.[1] };
+    projectService.clearHistory();
+    expect(projectService.transformFramePixels(1, 'all', () => ({ '1,1': '#222' }))).toBe(false);
+    expect(projectService.getState().layers[0].frame_pixels?.[1]).toEqual(before);
+    expect(projectService.canUndo()).toBe(false);
+  });
 });
 
 describe('layer opacity', () => {

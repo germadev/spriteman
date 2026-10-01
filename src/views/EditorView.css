@@ -134,11 +134,162 @@
       scrollbar-color: #223247 transparent;
     }
 
-    .hierarchy-panel, .inspector-panel, .palette-panel, .settings-panel {
+    @media (max-width: 760px) {
+      .app-topbar {
+        overflow-x: auto;
+        flex-shrink: 0;
+      }
+
+      .topbar-left, .topbar-center, .topbar-right {
+        flex-shrink: 0;
+      }
+
+      .app-workspace {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto auto;
+        align-content: start;
+        overflow-y: auto;
+        height: auto;
+      }
+
+      .center-workspace {
+        height: 80vh;
+        min-height: 620px;
+        border-right: 0;
+      }
+
+      .sidebar-docked-panel {
+        width: 100%;
+        overflow: visible;
+      }
+
+      .sidebar-scrollable {
+        overflow: visible;
+      }
+    }
+
+    .hierarchy-panel, .inspector-panel, .palette-panel, .settings-panel, .paint-tools-panel {
       background: var(--panel-alt);
       border: 1px solid var(--panel-border);
       border-radius: 8px;
       padding: 0.85rem;
+    }
+
+    .paint-tools, .paint-actions {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+
+    .selection-tools {
+      padding-top: 0.65rem;
+      border-top: 1px solid var(--panel-border);
+    }
+
+    .shape-picker { display: flex; position: relative; }
+
+    .shape-picker .shape-trigger { border-radius: 6px 0 0 6px; }
+
+    .shape-picker .shape-menu-toggle { width: 24px; border-radius: 0 6px 6px 0; border-left: 0; }
+
+    .shape-menu {
+      position: absolute;
+      z-index: 20;
+      top: 42px;
+      right: 0;
+      min-width: 145px;
+      padding: 4px;
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      background: var(--panel);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+    }
+
+    .shape-menu[hidden] { display: none; }
+
+    .shape-menu button {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      width: 100%;
+      padding: 0.5rem;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .shape-menu button:hover, .shape-menu button:focus-visible { background: rgba(56, 189, 248, 0.16); }
+
+    .btn-paint-tool:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .btn-select-all-layers {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0 0.45rem;
+      height: 30px;
+      border: 1px solid var(--panel-border);
+      border-radius: 5px;
+      background: var(--panel);
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+
+    .btn-select-all-layers.active, .btn-select-all-layers:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .paint-tools-panel {
+      display: grid;
+      gap: 0.65rem;
+    }
+
+    .palette-tools-group { position: relative; }
+
+    .palette-picker-row {
+      position: absolute;
+      z-index: 1;
+      left: 0.85rem;
+      top: 0.85rem;
+    }
+
+    .palette-picker-row .btn-paint-tool { width: 32px; height: 32px; }
+
+    .palette-tools-group .palette-header-dual { min-height: 32px; padding-left: 42px; }
+
+    .paint-option {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .btn-paint-tool {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+
+    .btn-paint-tool:hover, .btn-paint-tool.is-active {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.16);
+      color: var(--accent);
+    }
+
+    .btn-paint-tool:focus-visible {
+      outline: 2px solid var(--accent) !important;
+      outline-offset: 2px;
     }
 
     .panel-header {

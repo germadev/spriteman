@@ -1695,6 +1695,39 @@ class ProjectService {
     }
   }
 
+  public transformFramePixels(
+    frameIndex: number,
+    scope: 'active' | 'all',
+    transform: (pixels: Record<string, string>) => Record<string, string>
+  ): boolean {
+    const layers = scope === 'all'
+      ? this.state.layers
+      : this.state.layers.filter((layer) => layer.id === this.state.selectedLayerId);
+    if (!layers.length) return false;
+    if (layers.some((layer) => layer.groups?.some((group) =>
+      frameIndex > group.start_frame && frameIndex < group.end_frame))) return false;
+    const updates = layers.map((layer) => ({
+      layer,
+      pixels: transform({ ...(layer.frame_pixels?.[frameIndex] || {}) }),
+    })).filter(({ layer, pixels }) => {
+      const current = layer.frame_pixels?.[frameIndex] || {};
+      return Object.keys(current).length !== Object.keys(pixels).length ||
+        Object.keys(pixels).some((key) => current[key] !== pixels[key]);
+    });
+    if (!updates.length) return false;
+    this.beginPixelEdit(updates.map(({ layer }) => ({ layerId: layer.id, frame: frameIndex })));
+    for (const { layer, pixels } of updates) {
+      if (!layer.frame_pixels) layer.frame_pixels = {};
+      layer.frame_pixels[frameIndex] = pixels;
+    }
+    this.commitPixelEdit();
+    this.recomposeFrame(frameIndex);
+    this.autoRecalculateGroupsForFrame(frameIndex);
+    this.updateJson();
+    this.notify();
+    return true;
+  }
+
   // --- Layer Frame Groups ---
   public createFrameGroup(
     layerId: string,

@@ -90,3 +90,44 @@
       box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
       font-weight: 500;
     }
+
+    .canvas-mode-controls {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 2;
+    }
+
+    .btn-canvas-mode {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      background: #fff;
+      color: #334155;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+    }
+
+    .btn-canvas-mode.is-active { background: #e0f2fe; color: #0369a1; border-color: #0284c7; }
+
+    .btn-canvas-mode:focus-visible { outline: 2px solid #0284c7 !important; outline-offset: 2px; }
+
+    .btn-canvas-mode:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    @media (max-width: 760px) {
+      .canvas-mode-controls {
+        flex-direction: row;
+      }
+
+      .hud-hint {
+        display: none;
+      }
+
+    }

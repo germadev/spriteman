@@ -18,9 +18,37 @@ app:
   install: Install App
 
 canvas:
+  tools: Paint tools
+  paint_group: Color and shapes
+  shapes: Shapes
+  pencil: Pencil
+  fill: Fill contiguous area
+  picker: Eyedropper
+  line: Line
+  rectangle: Rectangle
+  circle: Circle
+  triangle: Triangle
+  selection: Rectangular selection
+  replace: Replace color (click source color)
+  filled: Filled shape
+  copy: Copy selection
+  cut: Cut selection
+  paste: Paste into selection
+  delete_selection: Delete selection
+  scope: Apply to
+  active_layer: Active layer
+  all_layers: All layers in frame
+  symmetry: Symmetry
+  mirror_horizontal: Mirror horizontally into empty pixels
+  mirror_vertical: Mirror vertically into empty pixels
   reset: Reset view
   reset_title: Recenter view (double click)
-  hint: "Shift: move layer • Ctrl: move pixel • Space: pan • Ctrl+Wheel: zoom"
+  hint: "Shift: layer • Ctrl: move • Space: pan • Ctrl+Wheel: zoom"
+  mode_controls: Canvas target and action
+  layer_mode: Layer
+  layer_mode_title: "Target layer instead of pixel (Shift)"
+  move_mode: Move
+  move_mode_title: "Move instead of paint (Ctrl)"
 
 timeline:
   play: Play
@@ -61,6 +89,8 @@ timeline:
 
 layers:
   title: Layer Hierarchy
+  all: All
+  select_all: Select all layers
   count: "{count} Layers"
   add: Add layer
   add_title: Add new layer

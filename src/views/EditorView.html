@@ -17,7 +17,6 @@
   const FrameStripComponent = _d(await import('../components/FrameStrip.html'));
   const HierarchyTreeComponent = _d(await import('../components/HierarchyTree.html'));
   const PixelPaletteComponent = _d(await import('../components/PixelPalette.html'));
-  const InspectorPanelComponent = _d(await import('../components/InspectorPanel.html'));
   const ProjectModalComponent = _d(await import('../components/ProjectModal.html'));
   const TextModalComponent = _d(await import('../components/TextModal.html'));
   const ExportModalComponent = _d(await import('../components/ExportModal.html'));
@@ -26,7 +25,8 @@
   const WelcomeScreenComponent = _d(await import('../components/WelcomeScreen.html'));
 
   const { STANDARD_PIXEL_SIZES, PIXEL_ART_PALETTE } = await import('../helpers/palette.helper');
-  const { getDiscreteFrameIndex } = await import('../helpers/animation.helper');
+  const { getDiscreteFrameIndex, getOnionFrameIndex } = await import('../helpers/animation.helper');
+  const { mirrorPixels, replacePixelColor } = await import('../helpers/canvas.helper');
   const {
     buildAni,
     buildIco,
@@ -37,9 +37,7 @@
     renderFramePng,
     safeExportName,
   } = await import('../helpers/export.helper');
-  const { formatMatrix } = await import('../helpers/format.helper');
   const { $toRaw } = await import('jq79');
-  const { findRenderItem } = await import('../wasm/index');
 
   let hasActiveProject = false;
   let canvasWidth = 64;
@@ -55,7 +53,6 @@
   let frameStrip: any;
   let hierarchyTree: any;
   let pixelPalette: any;
-  let inspectorPanel: any;
   let projectModal: any;
   let textModal: any;
   let exportModal: any;
@@ -64,6 +61,7 @@
 
   let currentZoom = 6;
   let selectedFrameIndex = 0;
+  let allLayersSelected = false;
   let selectedReferenceId: string | null = null;
   let activeReferenceDrag: {
     layerId: string;
@@ -90,7 +88,7 @@
     const currentFrame = getDiscreteFrameIndex(animationState.currentFrame, totalFrames);
     const visibleFrames = [currentFrame];
     if (animationState.onionSkinEnabled && totalFrames > 1) {
-      visibleFrames.push((currentFrame - 1 + totalFrames) % totalFrames);
+      visibleFrames.push(getOnionFrameIndex(currentFrame, totalFrames, state.layers.flatMap((layer: any) => layer.groups || [])));
     }
     projectService.previewLayerOpacity(preview.layerId, preview.opacity, visibleFrames);
   };
@@ -199,6 +197,42 @@
     pixelPalette.data.primaryColor = pixelPalette.data.secondaryColor;
     pixelPalette.data.secondaryColor = temp;
     canvasService.setColors(pixelPalette.data.primaryColor, pixelPalette.data.secondaryColor);
+  };
+
+  const paintScope = (): 'active' | 'all' => allLayersSelected ? 'all' : 'active';
+
+  const updateLayerToolMode = () => {
+    const editor = document.querySelector('.app-container');
+    editor?.querySelectorAll<HTMLButtonElement>('[data-paint-tool]:not([data-paint-tool="picker"]):not([data-paint-tool="replace"]), [data-selection-action]')
+      .forEach((button) => { button.disabled = allLayersSelected; });
+    editor?.querySelectorAll<HTMLButtonElement>('[data-canvas-mode]')
+      .forEach((button) => { button.disabled = allLayersSelected; });
+    editor?.querySelectorAll<HTMLButtonElement>('.shape-trigger, .shape-menu-toggle, [data-shape-choice]')
+      .forEach((button) => { button.disabled = allLayersSelected; });
+    if (allLayersSelected) {
+      const menu = editor?.querySelector<HTMLElement>('.shape-menu');
+      if (menu) menu.hidden = true;
+      editor?.querySelector('.shape-menu-toggle')?.setAttribute('aria-expanded', 'false');
+    }
+    const filled = editor?.querySelector<HTMLInputElement>('.shape-filled');
+    if (filled) filled.disabled = allLayersSelected;
+    if (allLayersSelected) editor?.querySelector<HTMLButtonElement>('[data-paint-tool="replace"]')?.click();
+    setField(hierarchyTree, 'allLayersSelected', allLayersSelected);
+  };
+
+  const editableFrame = (): boolean => {
+    const group = projectService.getActiveLayerGroupForFrame(selectedFrameIndex);
+    return !group || selectedFrameIndex === group.start_frame || selectedFrameIndex === group.end_frame;
+  };
+
+  const applyFrameTransform = (scope: 'active' | 'all', transform: (pixels: Record<string, string>) => Record<string, string>) => {
+    if (!editableFrame()) return;
+    if (projectService.transformFramePixels(selectedFrameIndex, scope, transform)) saveCurrentProject();
+  };
+
+  const handleMirror = (axis: 'horizontal' | 'vertical') => {
+    const { width, height } = canvasService.getCanvasSize();
+    applyFrameTransform(paintScope(), (pixels) => mirrorPixels(pixels, width, height, axis));
   };
 
   let saveTimer: number | null = null;
@@ -380,6 +414,10 @@
   };
 
   const applyTabsState = async (state: any): Promise<void> => {
+    if (state.activeTab !== activeProjectName && allLayersSelected) {
+      allLayersSelected = false;
+      updateLayerToolMode();
+    }
     if (projectTabs?.data) {
       projectTabs.data.tabs = state.tabs;
       projectTabs.data.activeTab = state.activeTab;
@@ -497,12 +535,6 @@
       syncTimelinePlayhead(currentInt, projState.meta.total_frames, animState.isPlaying);
     }
 
-    if (animState.resolvedFrame && inspectorPanel?.data) {
-      // Only the selected layer is materialized out of the packed frame buffer.
-      const selectedItem = findRenderItem(animState.resolvedFrame, projState.selectedLayerId);
-      inspectorPanel.data.item = selectedItem;
-      setField(inspectorPanel, 'matrixText', selectedItem?.matrix ? formatMatrix(selectedItem.matrix) : '');
-    }
   };
 
   /**
@@ -513,7 +545,7 @@
   const syncCanvasContent = (projState: any, animState: any): void => {
     const currentInt = getDiscreteFrameIndex(animState.currentFrame, animState.totalFrames);
     const totalFrames = Math.max(1, projState.meta.total_frames || 1);
-    const previousInt = (currentInt - 1 + totalFrames) % totalFrames;
+    const previousInt = getOnionFrameIndex(currentInt, totalFrames, projState.layers.flatMap((layer: any) => layer.groups || []));
     const onionPixels =
       animState.onionSkinEnabled && totalFrames > 1 ? projectService.getFrameComposite(previousInt) : null;
     canvasService.setFramePixels(projectService.getFrameComposite(currentInt), onionPixels);
@@ -550,6 +582,7 @@
           hierarchyTree.data.layers = projState.layers;
         }
         setField(hierarchyTree, 'selectedLayerId', projState.selectedLayerId);
+        setField(hierarchyTree, 'allLayersSelected', allLayersSelected);
         setField(hierarchyTree, 'isPivotMode', canvasService.isPivotMode());
       }
 
@@ -677,6 +710,29 @@
   canvasStage = CanvasStageComponent.mount(root.querySelector('.canvas-stage-wrapper'), {
     t,
     canvasService,
+    Icon,
+    isAllLayersSelected: () => allLayersSelected,
+    onPickColor: (color: string) => {
+      if (pixelPalette?.data) pixelPalette.data.primaryColor = color;
+      canvasService.setPrimaryColor(color);
+    },
+    onReplaceAt: (pixel: { x: number; y: number }, color: string) => {
+      const scope = paintScope();
+      const state = projectService.getState();
+      const active = state.layers.find((layer: any) => layer.id === state.selectedLayerId);
+      const source = scope === 'active'
+        ? active?.frame_pixels?.[selectedFrameIndex]?.[`${pixel.x},${pixel.y}`]
+        : projectService.getFrameComposite(selectedFrameIndex)[`${pixel.x},${pixel.y}`];
+      if (!source || source === color) return;
+      applyFrameTransform(scope, (pixels) => replacePixelColor(pixels, source, color));
+    },
+    onSelectionEdit: (transform: (pixels: Record<string, string>) => Record<string, string>) =>
+      applyFrameTransform('active', transform),
+    getPaintLayerPixels: () => {
+      const state = projectService.getState();
+      const layer = state.layers.find((item: any) => item.id === state.selectedLayerId) || state.layers[0];
+      return layer?.frame_pixels?.[selectedFrameIndex] || {};
+    },
     onPaintStroke: (pixels: any, color: string) => {
       const currentInt = selectedFrameIndex;
       const group = projectService.getActiveLayerGroupForFrame(currentInt);
@@ -828,10 +884,17 @@
     t,
     layers: [],
     selectedLayerId: null,
+    allLayersSelected: false,
     isPivotMode: false,
     onSelectLayer: (layerId: string) => {
+      allLayersSelected = false;
+      updateLayerToolMode();
       projectService.selectLayer(layerId);
       syncPivotState();
+    },
+    onSelectAllLayers: () => {
+      allLayersSelected = !allLayersSelected;
+      updateLayerToolMode();
     },
     onAddLayer: () => {
       projectService.addLayer();
@@ -1070,11 +1133,6 @@
     onRedo: () => handleRedo(),
   });
 
-  inspectorPanel = InspectorPanelComponent.mount(root.querySelector('.inspector-wrapper'), {
-    t,
-    item: null,
-    matrixText: '',
-  });
 
   pixelPalette = PixelPaletteComponent.mount(root.querySelector('.palette-wrapper'), {
     t,
@@ -1250,8 +1308,46 @@
     <div class="sidebar-docked-panel">
       <div class="sidebar-scrollable">
         <div class="hierarchy-wrapper"></div>
-        <div class="inspector-wrapper"></div>
-        <div class="palette-wrapper"></div>
+        <section class="paint-tools-panel" :aria-label="t('canvas.tools')">
+          <div class="paint-tools" role="group" :aria-label="t('canvas.paint_group')">
+            <button type="button" class="btn-paint-tool is-active" data-paint-tool="pencil" aria-pressed="true" :title="t('canvas.pencil')" :aria-label="t('canvas.pencil')"><Icon name="pencil" :size="16" /></button>
+            <button type="button" class="btn-paint-tool" data-paint-tool="fill" aria-pressed="false" :title="t('canvas.fill')" :aria-label="t('canvas.fill')"><Icon name="paint-bucket" :size="16" /></button>
+            <button type="button" class="btn-paint-tool" data-paint-tool="replace" aria-pressed="false" :title="t('canvas.replace')" :aria-label="t('canvas.replace')"><Icon name="refresh-cw" :size="16" /></button>
+            <div class="shape-picker">
+              <button type="button" class="btn-paint-tool shape-trigger" data-shape="rectangle" aria-pressed="false" :title="t('canvas.rectangle')" :aria-label="t('canvas.rectangle')">
+                <span data-shape-icon="line" hidden><Icon name="line" :size="16" /></span>
+                <span data-shape-icon="rectangle"><Icon name="square" :size="16" /></span>
+                <span data-shape-icon="circle" hidden><Icon name="circle" :size="16" /></span>
+                <span data-shape-icon="triangle" hidden><Icon name="triangle" :size="16" /></span>
+              </button>
+              <button type="button" class="btn-paint-tool shape-menu-toggle" :title="t('canvas.shapes')" :aria-label="t('canvas.shapes')" aria-expanded="false" aria-haspopup="true"><Icon name="chevron-down" :size="14" /></button>
+              <div class="shape-menu" hidden>
+                <button type="button" data-shape-choice="line"><Icon name="line" :size="16" />{{ t('canvas.line') }}</button>
+                <button type="button" data-shape-choice="rectangle"><Icon name="square" :size="16" />{{ t('canvas.rectangle') }}</button>
+                <button type="button" data-shape-choice="circle"><Icon name="circle" :size="16" />{{ t('canvas.circle') }}</button>
+                <button type="button" data-shape-choice="triangle"><Icon name="triangle" :size="16" />{{ t('canvas.triangle') }}</button>
+              </div>
+            </div>
+          </div>
+          <label class="paint-option"><input type="checkbox" class="shape-filled" />{{ t('canvas.filled') }}</label>
+          <div class="paint-actions selection-tools" role="group" :aria-label="t('canvas.selection')">
+            <button type="button" class="btn-paint-tool" data-paint-tool="selection" aria-pressed="false" :title="t('canvas.selection')" :aria-label="t('canvas.selection')"><Icon name="scan" :size="16" /></button>
+            <button type="button" class="btn-paint-tool" data-selection-action="copy" :title="t('canvas.copy')" :aria-label="t('canvas.copy')"><Icon name="copy" :size="16" /></button>
+            <button type="button" class="btn-paint-tool" data-selection-action="cut" :title="t('canvas.cut')" :aria-label="t('canvas.cut')"><Icon name="scissors" :size="16" /></button>
+            <button type="button" class="btn-paint-tool" data-selection-action="paste" :title="t('canvas.paste')" :aria-label="t('canvas.paste')"><Icon name="clipboard" :size="16" /></button>
+            <button type="button" class="btn-paint-tool" data-selection-action="delete" :title="t('canvas.delete_selection')" :aria-label="t('canvas.delete_selection')"><Icon name="trash-2" :size="16" /></button>
+          </div>
+          <div class="paint-actions" role="group" :aria-label="t('canvas.symmetry')">
+            <button type="button" class="btn-paint-tool" @click="handleMirror('horizontal')" :title="t('canvas.mirror_horizontal')" :aria-label="t('canvas.mirror_horizontal')"><Icon name="flip-horizontal" :size="16" /></button>
+            <button type="button" class="btn-paint-tool" @click="handleMirror('vertical')" :title="t('canvas.mirror_vertical')" :aria-label="t('canvas.mirror_vertical')"><Icon name="flip-vertical" :size="16" /></button>
+          </div>
+        </section>
+        <div class="palette-tools-group">
+          <div class="palette-picker-row">
+            <button type="button" class="btn-paint-tool" data-paint-tool="picker" aria-pressed="false" :title="t('canvas.picker')" :aria-label="t('canvas.picker')"><Icon name="pipette" :size="16" /></button>
+          </div>
+          <div class="palette-wrapper"></div>
+        </div>
       </div>
     </div>
   </div>

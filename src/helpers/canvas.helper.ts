@@ -9,6 +9,24 @@
 
 export type PixelMap = Record<string, string>;
 
+export function replacePixelColor(pixels: PixelMap, source: string, target: string): PixelMap {
+  return Object.fromEntries(Object.entries(pixels)
+    .filter(([, color]) => color !== source || target !== '__eraser__')
+    .map(([key, color]) => [key, color === source ? target : color]));
+}
+
+export function mirrorPixels(pixels: PixelMap, width: number, height: number, axis: 'horizontal' | 'vertical'): PixelMap {
+  const result = { ...pixels };
+  for (const [key, color] of Object.entries(pixels)) {
+    const point = parsePixelKey(key);
+    if (!point || point.x < 0 || point.y < 0 || point.x >= width || point.y >= height) continue;
+    const mirroredX = axis === 'horizontal' ? width - 1 - point.x : point.x;
+    const mirroredY = axis === 'vertical' ? height - 1 - point.y : point.y;
+    if (result[`${mirroredX},${mirroredY}`] === undefined) result[`${mirroredX},${mirroredY}`] = color;
+  }
+  return result;
+}
+
 export function getTouchDistance(t1: { clientX: number; clientY: number }, t2: { clientX: number; clientY: number }): number {
   const dx = t1.clientX - t2.clientX;
   const dy = t1.clientY - t2.clientY;
@@ -50,6 +68,100 @@ export function getLinePixels(x0: number, y0: number, x1: number, y1: number): A
     }
   }
   return points;
+}
+
+export type ShapeTool = 'line' | 'rectangle' | 'circle' | 'triangle';
+
+export function getShapePixels(
+  tool: ShapeTool,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  width: number,
+  height: number,
+  filled = false
+): Array<{ x: number; y: number }> {
+  const points = new Map<string, { x: number; y: number }>();
+  const add = (x: number, y: number) => {
+    if (x >= 0 && y >= 0 && x < width && y < height) points.set(`${x},${y}`, { x, y });
+  };
+  const line = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    for (const point of getLinePixels(from.x, from.y, to.x, to.y)) add(point.x, point.y);
+  };
+  if (tool === 'line') {
+    line(start, end);
+  } else {
+    const left = Math.min(start.x, end.x);
+    const right = Math.max(start.x, end.x);
+    const top = Math.min(start.y, end.y);
+    const bottom = Math.max(start.y, end.y);
+    if (tool === 'rectangle') {
+      for (let y = Math.max(0, top); y <= Math.min(height - 1, bottom); y++) {
+        for (let x = Math.max(0, left); x <= Math.min(width - 1, right); x++) {
+          if (filled || x === left || x === right || y === top || y === bottom) add(x, y);
+        }
+      }
+    } else if (tool === 'triangle') {
+      const apex = { x: Math.floor((left + right) / 2), y: top };
+      const baseLeft = { x: left, y: bottom };
+      const baseRight = { x: right, y: bottom };
+      line(apex, baseLeft);
+      line(apex, baseRight);
+      line(baseLeft, baseRight);
+      if (filled) {
+        for (let y = Math.max(0, top); y <= Math.min(height - 1, bottom); y++) {
+          const edge = [...points.values()].filter((point) => point.y === y).map((point) => point.x);
+          if (!edge.length) continue;
+          for (let x = Math.min(...edge); x <= Math.max(...edge); x++) add(x, y);
+        }
+      }
+    } else {
+      const centerX = (left + right) / 2;
+      const centerY = (top + bottom) / 2;
+      const radiusX = Math.max(0.5, (right - left) / 2);
+      const radiusY = Math.max(0.5, (bottom - top) / 2);
+      for (let y = Math.max(0, top); y <= Math.min(height - 1, bottom); y++) {
+        for (let x = Math.max(0, left); x <= Math.min(width - 1, right); x++) {
+          const distance = ((x - centerX) / radiusX) ** 2 + ((y - centerY) / radiusY) ** 2;
+          if (distance <= 1.1 && (filled ||
+            [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) =>
+              ((x + dx - centerX) / radiusX) ** 2 + ((y + dy - centerY) / radiusY) ** 2 > 1.1))) add(x, y);
+        }
+      }
+      if (!points.size) add(start.x, start.y);
+    }
+  }
+  return [...points.values()];
+}
+
+export function getFloodFillPixels(
+  pixels: PixelMap,
+  start: { x: number; y: number },
+  width: number,
+  height: number,
+  color: string | null
+): Array<{ x: number; y: number }> {
+  if (start.x < 0 || start.y < 0 || start.x >= width || start.y >= height) return [];
+  const original = pixels[`${start.x},${start.y}`];
+  if (original === (color ?? undefined)) return [];
+
+  const result: Array<{ x: number; y: number }> = [];
+  const pending = [start];
+  const visited = new Set<string>();
+  while (pending.length) {
+    const point = pending.pop()!;
+    if (point.x < 0 || point.y < 0 || point.x >= width || point.y >= height) continue;
+    const key = `${point.x},${point.y}`;
+    if (visited.has(key) || pixels[key] !== original) continue;
+    visited.add(key);
+    result.push(point);
+    pending.push(
+      { x: point.x + 1, y: point.y },
+      { x: point.x - 1, y: point.y },
+      { x: point.x, y: point.y + 1 },
+      { x: point.x, y: point.y - 1 }
+    );
+  }
+  return result;
 }
 
 /**

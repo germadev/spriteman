@@ -385,7 +385,7 @@ class CanvasService {
   }
 
   /** Top-left corner of the artboard, in CSS pixels relative to the viewport element. */
-  private getArtboardOrigin(viewWidth: number, viewHeight: number): { x: number; y: number } {
+  public getArtboardOrigin(viewWidth: number, viewHeight: number): { x: number; y: number } {
     return {
       x: viewWidth / 2 + this.panX - (this.spriteWidth * this.zoom) / 2,
       y: viewHeight / 2 + this.panY - (this.spriteHeight * this.zoom) / 2,

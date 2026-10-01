@@ -1,7 +1,13 @@
 <script :setup="{
   t,
   canvasService,
+  Icon,
   onPaintStroke,
+  getPaintLayerPixels,
+  onPickColor,
+  onSelectionEdit,
+  onReplaceAt,
+  isAllLayersSelected,
   onStartMoveReference,
   onMoveReference,
   onStartTranslateLayer,
@@ -10,9 +16,11 @@
   onMovePixel,
   onZoomChange
 }" type="text/typescript">
-  const { getLinePixels, getTouchDistance, getTouchMidpoint } = await import('../helpers/canvas.helper');
+  const { getFloodFillPixels, getLinePixels, getShapePixels, getTouchDistance, getTouchMidpoint, parsePixelKey } = await import('../helpers/canvas.helper');
 
   let curZoom = canvasService.getZoom();
+  type PaintTool = 'pencil' | 'fill' | 'picker' | 'line' | 'rectangle' | 'circle' | 'triangle' | 'selection' | 'replace';
+  let activeTool: PaintTool = 'pencil';
 
   // Assigned once the stage is mounted; releases every window listener it registered.
   let dispose: () => void = () => {};
@@ -38,6 +46,10 @@
     let isCtrlHeld = false;
     let isCmdHeld = false;
     let isAltHeld = false;
+    let layerTarget = false;
+    let moveMode = false;
+    const targetsLayer = () => layerTarget || isShiftHeld;
+    const movesArtwork = () => moveMode || isCtrlHeld;
 
     let isMouseDown = false;
     let isMousePanning = false;
@@ -60,6 +72,12 @@
     let currentPaintColor = '#000000';
     let lastPaintedPixel: { x: number; y: number } | null = null;
     let currentStrokePixels: Array<{ x: number; y: number }> = [];
+    let dragStart: { x: number; y: number } | null = null;
+    let dragEnd: { x: number; y: number } | null = null;
+    let movingSelection = false;
+    let selection: { left: number; top: number; right: number; bottom: number } | null = null;
+    let clipboard: Record<string, string> = {};
+    let clipboardOrigin = { x: 0, y: 0 };
 
     // Touch gesture state
     let isTwoFingerGesture = false;
@@ -94,12 +112,42 @@
 
     const paint = () => {
       canvasService.redraw(ctx, cssWidth, cssHeight, {
-        isShiftHeld,
-        isCtrlHeld,
+        isShiftHeld: !isAllLayersSelected?.() && movesArtwork() && targetsLayer() && activeTool !== 'selection',
+        isCtrlHeld: !isAllLayersSelected?.() && movesArtwork() && !targetsLayer() && activeTool !== 'selection',
         isCmdHeld,
         isAltHeld,
         isDragging: isMovingLayer || isDraggingLoosePixel || isDraggingReference || isMousePanning,
       });
+      const origin = canvasService.getArtboardOrigin(cssWidth, cssHeight);
+      const zoom = canvasService.getZoom();
+      if (dragStart && dragEnd && activeTool !== 'pencil') {
+        if (activeTool === 'selection') {
+          const left = Math.min(dragStart.x, dragEnd.x);
+          const top = Math.min(dragStart.y, dragEnd.y);
+          ctx.strokeStyle = '#0284c7';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 3]);
+          ctx.strokeRect(origin.x + left * zoom, origin.y + top * zoom,
+            (Math.abs(dragEnd.x - dragStart.x) + 1) * zoom,
+            (Math.abs(dragEnd.y - dragStart.y) + 1) * zoom);
+          ctx.setLineDash([]);
+        } else if (['line', 'rectangle', 'circle', 'triangle'].includes(activeTool)) {
+          const { width, height } = canvasService.getCanvasSize();
+          const filled = !!root.closest('.app-container')?.querySelector<HTMLInputElement>('.shape-filled')?.checked;
+          const points = getShapePixels(activeTool as 'line' | 'rectangle' | 'circle' | 'triangle', dragStart, dragEnd, width, height, filled);
+          ctx.fillStyle = currentPaintColor === '__eraser__' ? 'rgba(239, 68, 68, 0.6)' : currentPaintColor;
+          ctx.globalAlpha = 0.65;
+          for (const point of points) ctx.fillRect(origin.x + point.x * zoom, origin.y + point.y * zoom, zoom, zoom);
+          ctx.globalAlpha = 1;
+        }
+      } else if (selection && activeTool === 'selection') {
+        ctx.strokeStyle = '#0284c7';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(origin.x + selection.left * zoom, origin.y + selection.top * zoom,
+          (selection.right - selection.left + 1) * zoom, (selection.bottom - selection.top + 1) * zoom);
+        ctx.setLineDash([]);
+      }
     };
 
     // The service coalesces every change into a single repaint per animation frame.
@@ -107,20 +155,32 @@
 
     const requestPaint = () => canvasService.notify();
 
+    const updateModeButtons = () => {
+      for (const [mode, active] of [['layer', targetsLayer()], ['move', movesArtwork()]] as const) {
+        const button = root.querySelector<HTMLButtonElement>(`[data-canvas-mode="${mode}"]`);
+        if (!button) continue;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', String(active));
+      }
+    };
+
     const updateCursor = () => {
-      let next = 'crosshair';
+      let next = activeTool === 'fill' ? 'cell' : activeTool === 'picker' ? 'copy' : 'crosshair';
       if (isDraggingReference) {
         next = 'grabbing';
-      } else if (isMovingLayer || isShiftHeld) {
-        next = isMovingLayer ? 'grabbing' : 'move';
+      } else if (isMovingLayer) {
+        next = 'grabbing';
       } else if (isDraggingLoosePixel) {
         next = 'grabbing';
-      } else if (isCtrlHeld) {
-        const hover = canvasService.getHoverPixel();
-        const framePixels = canvasService.getFramePixels();
-        next = hover && framePixels[`${hover.x},${hover.y}`] ? 'grab' : 'default';
       } else if (isSpaceHeld || isMousePanning) {
         next = isMousePanning ? 'grabbing' : 'grab';
+      } else if (movesArtwork() && activeTool === 'selection') {
+        next = 'move';
+      } else if (movesArtwork() && targetsLayer()) {
+        next = 'move';
+      } else if (movesArtwork()) {
+        const hover = canvasService.getHoverPixel();
+        next = hover && getPaintLayerPixels?.()[`${hover.x},${hover.y}`] ? 'grab' : 'default';
       } else if (canvasService.isPivotMode()) {
         next = canvasService.findReferenceAt(canvasService.getHoverPixel()) ? 'grab' : 'copy';
       }
@@ -137,6 +197,137 @@
     const paintPixelAt = (x: number, y: number) => {
       currentStrokePixels.push({ x, y });
       canvasService.paintPixel(x, y, currentPaintColor === '__eraser__' ? null : currentPaintColor);
+    };
+
+    const fillAt = (pixel: { x: number; y: number }, color: string) => {
+      const { width, height } = canvasService.getCanvasSize();
+      const pixels = getFloodFillPixels(
+        getPaintLayerPixels?.() || {}, pixel, width, height,
+        color === '__eraser__' ? null : color
+      );
+      if (pixels.length) onPaintStroke?.(pixels, color);
+    };
+
+    const withinSelection = (pixel: { x: number; y: number }) => selection &&
+      pixel.x >= selection.left && pixel.x <= selection.right && pixel.y >= selection.top && pixel.y <= selection.bottom;
+
+    const selectedPixels = () => Object.fromEntries(Object.entries(getPaintLayerPixels?.() || {}).filter(([key]) => {
+      const point = parsePixelKey(key);
+      return point && withinSelection(point);
+    }));
+
+    const startTool = (pixel: { x: number; y: number }, color: string) => {
+      if (isAllLayersSelected?.() && activeTool !== 'picker' && activeTool !== 'replace') return;
+      currentPaintColor = color;
+      if (activeTool === 'picker') {
+        const picked = canvasService.getFramePixels()[`${pixel.x},${pixel.y}`];
+        if (picked) onPickColor?.(picked);
+      } else if (activeTool === 'replace') {
+        onReplaceAt?.(pixel, color);
+      } else if (activeTool === 'fill') {
+        fillAt(pixel, color);
+      } else if (activeTool === 'selection') {
+        movingSelection = movesArtwork() && !!withinSelection(pixel);
+        if (movesArtwork() && !movingSelection) return;
+        dragStart = pixel;
+        dragEnd = pixel;
+        if (!movingSelection) selection = null;
+        requestPaint();
+      } else if (activeTool !== 'pencil') {
+        dragStart = pixel;
+        dragEnd = pixel;
+        requestPaint();
+      } else {
+        isPainting = true;
+        lastPaintedPixel = pixel;
+        currentStrokePixels = [];
+        paintPixelAt(pixel.x, pixel.y);
+      }
+    };
+
+    const finishTool = () => {
+      if (!dragStart || !dragEnd) return;
+      const start = dragStart;
+      const end = dragEnd;
+      dragStart = null;
+      dragEnd = null;
+      if (activeTool === 'selection') {
+        if (movingSelection && selection) {
+          const dx = end.x - start.x;
+          const dy = end.y - start.y;
+          const { width, height } = canvasService.getCanvasSize();
+          const source = selectedPixels();
+          if (dx || dy) {
+            onSelectionEdit?.((pixels: Record<string, string>) => {
+              const result = { ...pixels };
+              for (const key of Object.keys(source)) delete result[key];
+              for (const [key, color] of Object.entries(source)) {
+                const point = parsePixelKey(key);
+                if (!point) continue;
+                const x = point.x + dx;
+                const y = point.y + dy;
+                if (x >= 0 && y >= 0 && x < width && y < height) result[`${x},${y}`] = color;
+              }
+              return result;
+            });
+            selection = {
+              left: Math.max(0, Math.min(width - 1, selection.left + dx)),
+              right: Math.max(0, Math.min(width - 1, selection.right + dx)),
+              top: Math.max(0, Math.min(height - 1, selection.top + dy)),
+              bottom: Math.max(0, Math.min(height - 1, selection.bottom + dy)),
+            };
+          }
+        } else {
+          selection = { left: Math.min(start.x, end.x), right: Math.max(start.x, end.x),
+            top: Math.min(start.y, end.y), bottom: Math.max(start.y, end.y) };
+        }
+        movingSelection = false;
+      } else {
+        const { width, height } = canvasService.getCanvasSize();
+        const filled = !!root.closest('.app-container')?.querySelector<HTMLInputElement>('.shape-filled')?.checked;
+        const pixels = getShapePixels(activeTool as 'line' | 'rectangle' | 'circle' | 'triangle', start, end, width, height, filled);
+        if (pixels.length) onPaintStroke?.(pixels, currentPaintColor);
+      }
+      requestPaint();
+    };
+
+    const startMove = (pixel: { x: number; y: number }, clientX: number, clientY: number): boolean => {
+      if (isAllLayersSelected?.() || !movesArtwork() || activeTool === 'selection') return false;
+      if (targetsLayer()) {
+        isMovingLayer = true;
+        layerDragStartClient = { x: clientX, y: clientY };
+        layerDragTotalDisplacement = { x: 0, y: 0 };
+        onStartTranslateLayer?.();
+      } else {
+        if (!getPaintLayerPixels?.()[`${pixel.x},${pixel.y}`]) return true;
+        isDraggingLoosePixel = true;
+        draggedPixelStart = pixel;
+        draggedPixelCurrent = pixel;
+        onStartMovePixel?.(pixel.x, pixel.y);
+      }
+      updateCursor();
+      requestPaint();
+      return true;
+    };
+
+    const moveArtworkTo = (clientX: number, clientY: number) => {
+      if (isMovingLayer) {
+        const zoom = canvasService.getZoom();
+        const totalDx = Math.round((clientX - layerDragStartClient.x) / zoom);
+        const totalDy = Math.round((clientY - layerDragStartClient.y) / zoom);
+        const stepDx = totalDx - layerDragTotalDisplacement.x;
+        const stepDy = totalDy - layerDragTotalDisplacement.y;
+        if (stepDx || stepDy) {
+          layerDragTotalDisplacement = { x: totalDx, y: totalDy };
+          onTranslateLayer?.(stepDx, stepDy, false);
+        }
+      } else if (isDraggingLoosePixel) {
+        const pixel = canvasService.getSpritePixelAtPointer(clientX, clientY, viewRect);
+        if (pixel && (pixel.x !== draggedPixelCurrent.x || pixel.y !== draggedPixelCurrent.y)) {
+          draggedPixelCurrent = pixel;
+          onMovePixel?.(draggedPixelStart.x, draggedPixelStart.y, pixel.x, pixel.y, false);
+        }
+      }
     };
 
     const paintLineTo = (pixel: { x: number; y: number }) => {
@@ -201,6 +392,7 @@
         }
       }
       if (changed) {
+        updateModeButtons();
         updateCursor();
         requestPaint();
       }
@@ -229,6 +421,7 @@
         changed = true;
       }
       if (changed) {
+        updateModeButtons();
         updateCursor();
         requestPaint();
       }
@@ -243,6 +436,7 @@
       isMousePanning = false;
       isSpaceHeld = false;
       isDraggingLoosePixel = false;
+      updateModeButtons();
       updateCursor();
       requestPaint();
     }, listen);
@@ -256,17 +450,17 @@
           e.preventDefault();
           isTwoFingerGesture = true;
           isPainting = false;
+          dragStart = null;
+          dragEnd = null;
           initialTouchDistance = getTouchDistance(e.touches[0], e.touches[1]);
           initialTouchZoom = canvasService.getZoom();
           lastTouchMidpoint = getTouchMidpoint(e.touches[0], e.touches[1]);
         } else if (e.touches.length === 1 && !isTwoFingerGesture) {
           const pixel = canvasService.getSpritePixelAtPointer(e.touches[0].clientX, e.touches[0].clientY, viewRect);
           if (pixel) {
-            isPainting = true;
-            lastPaintedPixel = pixel;
-            currentStrokePixels = [];
-            currentPaintColor = canvasService.getColors().primary;
-            paintPixelAt(pixel.x, pixel.y);
+            if (!startMove(pixel, e.touches[0].clientX, e.touches[0].clientY)) {
+              startTool(pixel, canvasService.getColors().primary);
+            }
           }
         }
       },
@@ -288,19 +482,32 @@
             canvasService.pan(currentMid.x - lastTouchMidpoint.x, currentMid.y - lastTouchMidpoint.y);
           }
           lastTouchMidpoint = currentMid;
+        } else if ((isMovingLayer || isDraggingLoosePixel) && e.touches.length === 1) {
+          e.preventDefault();
+          moveArtworkTo(e.touches[0].clientX, e.touches[0].clientY);
         } else if (isPainting && e.touches.length === 1) {
           e.preventDefault();
           const pixel = canvasService.getSpritePixelAtPointer(e.touches[0].clientX, e.touches[0].clientY, viewRect);
           if (pixel) {
             paintLineTo(pixel);
           }
+        } else if (dragStart && e.touches.length === 1) {
+          e.preventDefault();
+          const pixel = canvasService.getSpritePixelAtPointer(e.touches[0].clientX, e.touches[0].clientY, viewRect);
+          if (pixel) { dragEnd = pixel; requestPaint(); }
         }
       },
       { passive: false, signal: teardown.signal }
     );
 
     const endTouch = () => {
+      if (isMovingLayer) { isMovingLayer = false; onTranslateLayer?.(0, 0, true); }
+      if (isDraggingLoosePixel) {
+        isDraggingLoosePixel = false;
+        onMovePixel?.(draggedPixelStart.x, draggedPixelStart.y, draggedPixelCurrent.x, draggedPixelCurrent.y, true);
+      }
       commitStroke();
+      if (!isTwoFingerGesture) finishTool();
       isTwoFingerGesture = false;
       lastTouchMidpoint = null;
     };
@@ -330,9 +537,10 @@
       isCtrlHeld = e.ctrlKey;
       isCmdHeld = e.metaKey;
       isAltHeld = e.altKey;
+      updateModeButtons();
 
       // Reference editing owns the primary pointer gesture while active.
-      if (canvasService.isPivotMode() && e.button === 0) {
+      if (!isAllLayersSelected?.() && canvasService.isPivotMode() && e.button === 0) {
         e.preventDefault();
         const pixel = canvasService.getSpritePixelAtPointer(e.clientX, e.clientY, viewRect);
         const existingReferenceId = canvasService.findReferenceAt(pixel);
@@ -346,19 +554,7 @@
         return;
       }
 
-      // 1. SHIFT: drag the layer contents
-      if (isShiftHeld && e.button === 0) {
-        e.preventDefault();
-        isMovingLayer = true;
-        layerDragStartClient = { x: e.clientX, y: e.clientY };
-        layerDragTotalDisplacement = { x: 0, y: 0 };
-        updateCursor();
-        onStartTranslateLayer?.();
-        requestPaint();
-        return;
-      }
-
-      // 2. Space or middle click: pan the canvas
+      // Space or middle click: pan the canvas.
       if (isSpaceHeld || e.button === 1) {
         e.preventDefault();
         isMousePanning = true;
@@ -367,30 +563,13 @@
         return;
       }
 
-      // 3. CTRL: drag a single loose pixel
-      if (isCtrlHeld && e.button === 0) {
-        const pixel = canvasService.getSpritePixelAtPointer(e.clientX, e.clientY, viewRect);
-        if (pixel && canvasService.getFramePixels()[`${pixel.x},${pixel.y}`]) {
-          e.preventDefault();
-          isDraggingLoosePixel = true;
-          draggedPixelStart = { x: pixel.x, y: pixel.y };
-          draggedPixelCurrent = { x: pixel.x, y: pixel.y };
-          updateCursor();
-          onStartMovePixel?.(pixel.x, pixel.y);
-          return;
-        }
-      }
-
       if (e.button === 0 || e.button === 2) {
         e.preventDefault();
         const pixel = canvasService.getSpritePixelAtPointer(e.clientX, e.clientY, viewRect);
         if (pixel) {
-          isPainting = true;
+          if (e.button === 0 && startMove(pixel, e.clientX, e.clientY)) return;
           const colors = canvasService.getColors();
-          currentPaintColor = e.button === 2 ? colors.secondary : colors.primary;
-          lastPaintedPixel = pixel;
-          currentStrokePixels = [];
-          paintPixelAt(pixel.x, pixel.y);
+          startTool(pixel, e.button === 2 ? colors.secondary : colors.primary);
         }
       }
     }, listen);
@@ -400,6 +579,7 @@
       isCtrlHeld = e.ctrlKey;
       isCmdHeld = e.metaKey;
       isAltHeld = e.altKey;
+      updateModeButtons();
 
       if (isDraggingReference) {
         const pixel = canvasService.getSpritePixelAtPointer(e.clientX, e.clientY, viewRect);
@@ -412,16 +592,7 @@
       }
 
       if (isMovingLayer) {
-        const z = canvasService.getZoom();
-        const totalDx = Math.round((e.clientX - layerDragStartClient.x) / z);
-        const totalDy = Math.round((e.clientY - layerDragStartClient.y) / z);
-        const stepDx = totalDx - layerDragTotalDisplacement.x;
-        const stepDy = totalDy - layerDragTotalDisplacement.y;
-        if (stepDx !== 0 || stepDy !== 0) {
-          layerDragTotalDisplacement.x = totalDx;
-          layerDragTotalDisplacement.y = totalDy;
-          onTranslateLayer?.(stepDx, stepDy, false);
-        }
+        moveArtworkTo(e.clientX, e.clientY);
         return;
       }
 
@@ -432,11 +603,7 @@
       }
 
       if (isDraggingLoosePixel) {
-        const pixel = canvasService.getSpritePixelAtPointer(e.clientX, e.clientY, viewRect);
-        if (pixel && (pixel.x !== draggedPixelCurrent.x || pixel.y !== draggedPixelCurrent.y)) {
-          draggedPixelCurrent = { x: pixel.x, y: pixel.y };
-          onMovePixel?.(draggedPixelStart.x, draggedPixelStart.y, pixel.x, pixel.y, false);
-        }
+        moveArtworkTo(e.clientX, e.clientY);
         return;
       }
 
@@ -445,6 +612,15 @@
         if (pixel && (!lastPaintedPixel || lastPaintedPixel.x !== pixel.x || lastPaintedPixel.y !== pixel.y)) {
           paintLineTo(pixel);
           canvasService.setHoverPixel(pixel);
+        }
+        return;
+      }
+
+      if (dragStart) {
+        const pixel = canvasService.getSpritePixelAtPointer(e.clientX, e.clientY, viewRect);
+        if (pixel && (pixel.x !== dragEnd?.x || pixel.y !== dragEnd?.y)) {
+          dragEnd = pixel;
+          requestPaint();
         }
         return;
       }
@@ -505,6 +681,7 @@
       }
 
       commitStroke();
+      finishTool();
       updateCursor();
     }, listen);
 
@@ -524,6 +701,117 @@
       }, listen);
     }
 
+    root.querySelectorAll<HTMLButtonElement>('[data-canvas-mode]').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (isAllLayersSelected?.()) return;
+        if (button.dataset.canvasMode === 'layer') layerTarget = !layerTarget;
+        else moveMode = !moveMode;
+        updateModeButtons();
+        updateCursor();
+        requestPaint();
+      }, listen);
+    });
+
+    const toolButtons = root.closest('.app-container')?.querySelectorAll<HTMLButtonElement>('[data-paint-tool]');
+    const shapePicker = root.closest('.app-container')?.querySelector<HTMLElement>('.shape-picker');
+    const shapeTrigger = shapePicker?.querySelector<HTMLButtonElement>('.shape-trigger');
+    const shapeToggle = shapePicker?.querySelector<HTMLButtonElement>('.shape-menu-toggle');
+    const shapeMenu = shapePicker?.querySelector<HTMLElement>('.shape-menu');
+    let lastShape: PaintTool = 'rectangle';
+    const closeShapeMenu = () => {
+      if (shapeMenu) shapeMenu.hidden = true;
+      shapeToggle?.setAttribute('aria-expanded', 'false');
+    };
+    const selectTool = (tool: PaintTool) => {
+      commitStroke();
+      dragStart = null;
+      dragEnd = null;
+      selection = null;
+      activeTool = tool;
+      toolButtons?.forEach((toolButton) => {
+        const selected = toolButton.dataset.paintTool === tool;
+        toolButton.classList.toggle('is-active', selected);
+        toolButton.setAttribute('aria-pressed', String(selected));
+      });
+      if (shapeTrigger) {
+        const isShape = ['line', 'rectangle', 'circle', 'triangle'].includes(tool);
+        if (isShape) {
+          lastShape = tool;
+          shapeTrigger.dataset.shape = tool;
+          const choice = shapeMenu?.querySelector<HTMLButtonElement>(`[data-shape-choice="${tool}"]`);
+          shapeTrigger.title = choice?.textContent?.trim() || tool;
+          shapeTrigger.setAttribute('aria-label', shapeTrigger.title);
+          shapeTrigger.querySelectorAll<HTMLElement>('[data-shape-icon]').forEach((icon) => {
+            icon.hidden = icon.dataset.shapeIcon !== tool;
+          });
+        }
+        shapeTrigger.classList.toggle('is-active', isShape);
+        shapeTrigger.setAttribute('aria-pressed', String(isShape));
+      }
+      closeShapeMenu();
+      updateCursor();
+      requestPaint();
+    };
+    toolButtons?.forEach((button) => {
+      button.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectTool(button.dataset.paintTool as PaintTool);
+      }, listen);
+    });
+    shapeTrigger?.addEventListener('click', () => selectTool(lastShape), listen);
+    shapeToggle?.addEventListener('click', () => {
+      if (!shapeMenu) return;
+      shapeMenu.hidden = !shapeMenu.hidden;
+      shapeToggle.setAttribute('aria-expanded', String(!shapeMenu.hidden));
+    }, listen);
+    shapeMenu?.querySelectorAll<HTMLButtonElement>('[data-shape-choice]').forEach((button) => {
+      button.addEventListener('click', () => selectTool(button.dataset.shapeChoice as PaintTool), listen);
+    });
+    window.addEventListener('click', (event) => {
+      if (shapePicker && !shapePicker.contains(event.target as Node)) closeShapeMenu();
+    }, listen);
+    shapePicker?.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') { closeShapeMenu(); shapeToggle?.focus(); }
+    }, listen);
+
+    const editorRoot = root.closest('.app-container');
+    editorRoot?.querySelectorAll<HTMLButtonElement>('[data-selection-action]').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (activeTool !== 'selection' || !selection) return;
+        const action = button.dataset.selectionAction;
+        if (action === 'copy' || action === 'cut') {
+          clipboard = selectedPixels();
+          clipboardOrigin = { x: selection.left, y: selection.top };
+        }
+        if (action === 'delete' || action === 'cut') {
+          const keys = Object.keys(selectedPixels());
+          if (keys.length) onSelectionEdit?.((pixels: Record<string, string>) => {
+            const result = { ...pixels };
+            for (const key of keys) delete result[key];
+            return result;
+          });
+        }
+        if (action === 'paste' && Object.keys(clipboard).length) {
+          const offsetX = selection.left - clipboardOrigin.x;
+          const offsetY = selection.top - clipboardOrigin.y;
+          const { width, height } = canvasService.getCanvasSize();
+          onSelectionEdit?.((pixels: Record<string, string>) => {
+            const result = { ...pixels };
+            for (const [key, color] of Object.entries(clipboard)) {
+              const point = parsePixelKey(key);
+              if (!point) continue;
+              const x = point.x + offsetX;
+              const y = point.y + offsetY;
+              if (x >= 0 && x < width && y >= 0 && y < height) result[`${x},${y}`] = color;
+            }
+            return result;
+          });
+        }
+        requestPaint();
+      }, listen);
+    });
+
     // Exposed on the component store so a host that unmounts the stage can release
     // every window listener it registered.
     dispose = () => {
@@ -542,5 +830,9 @@
       <button class="btn-hud-tool btn-reset-view" :title="t('canvas.reset_title')">{{ t('canvas.reset') }}</button>
     </div>
     <div class="hud-hint">{{ t('canvas.hint') }}</div>
+  </div>
+  <div class="canvas-mode-controls" role="group" :aria-label="t('canvas.mode_controls')">
+    <button type="button" class="btn-canvas-mode" data-canvas-mode="layer" aria-pressed="false" :title="t('canvas.layer_mode_title')" :aria-label="t('canvas.layer_mode_title')"><Icon name="layers" :size="18" /></button>
+    <button type="button" class="btn-canvas-mode" data-canvas-mode="move" aria-pressed="false" :title="t('canvas.move_mode_title')" :aria-label="t('canvas.move_mode_title')"><Icon name="move" :size="18" /></button>
   </div>
 </div>

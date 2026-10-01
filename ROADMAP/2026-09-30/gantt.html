@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spritemotion roadmap - September 30, 2026</title>
+  <style>
+    :root { font-family: ui-sans-serif, sans-serif; color: #152536; background: #edf3f5; }
+    body { max-width: 960px; margin: 0 auto; padding: 2rem 1rem; }
+    h1 { font-size: 1.5rem; }
+    .chart { overflow-x: auto; padding: 1.5rem 0; }
+    .axis, .row { display: grid; grid-template-columns: minmax(180px, 260px) repeat(4, minmax(110px, 1fr)); gap: 4px; align-items: center; min-width: 660px; }
+    .axis { font-weight: 700; color: #435669; border-bottom: 2px solid #a6b9c5; }
+    .axis span, .label { padding: .7rem; }
+    .row { border-bottom: 1px solid #cad8df; min-height: 54px; }
+    .bar { height: 24px; border-radius: 3px; background: #087e8b; }
+    .future { background: #d37b32; }
+    .pending { background: repeating-linear-gradient(45deg, #8295a5, #8295a5 5px, #b2c1ca 5px, #b2c1ca 10px); }
+    .legend { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .85rem; }
+    .legend b { display: inline-block; width: .8rem; height: .8rem; background: #087e8b; margin-right: .3rem; }
+    .legend .future { background: #d37b32; }
+    .legend .pending { background: #8295a5; }
+  </style>
+</head>
+<body>
+  <h1>Spritemotion development timeline</h1>
+  <p>Snapshot: September 30, 2026. Later phases are targets, not release commitments.</p>
+  <div class="legend"><span><b></b>Completed</span><span><b class="future"></b>Planned</span><span><b class="pending"></b>Pending definition</span></div>
+  <div class="chart" role="img" aria-label="Gantt chart: reference editing and paint tools completed in September; shapes and browser tests planned in October; export and atlas work planned for later October; brush sizes and mobile layout pending definition.">
+    <div class="axis"><span>Milestone</span><span>Sep 2026</span><span>Early Oct</span><span>Late Oct</span><span>Later</span></div>
+    <div class="row"><span class="label">References and fill tools</span><span class="bar"></span></div>
+    <div class="row"><span class="label">Shapes and browser tests</span><span></span><span class="bar future"></span></div>
+    <div class="row"><span class="label">Export and atlas import</span><span></span><span></span><span class="bar future"></span></div>
+    <div class="row"><span class="label">Brush sizes and mobile layout</span><span></span><span></span><span></span><span class="bar pending"></span></div>
+  </div>
+</body>
+</html>

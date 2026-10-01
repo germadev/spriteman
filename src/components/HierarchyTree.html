@@ -2,8 +2,10 @@
   t,
   layers,
   selectedLayerId,
+  allLayersSelected,
   isPivotMode,
   onSelectLayer,
+  onSelectAllLayers,
   onAddLayer,
   onTogglePivotMode,
   onToggleLayerRelative,
@@ -199,13 +201,15 @@
 
 <div class="hierarchy-panel">
   <div class="panel-header">
-    <span class="panel-title">{{ t('layers.title') }}</span>
+    <button type="button" class="btn-select-all-layers" :class="{ active: allLayersSelected }"
+      :aria-pressed="String(!!allLayersSelected)" :title="t('layers.select_all')" :aria-label="t('layers.select_all')"
+      @click="onSelectAllLayers?.()"><Icon name="layers" :size="16" />{{ t('layers.all') }}</button>
     <span class="badge">{{ layerCountText }}</span>
   </div>
 
   <div class="layer-list">
     <div :each="layer in validLayers" :key="layer.id" class="layer-item" :class="{
-        active: layer.id === selectedLayerId,
+        active: allLayersSelected || layer.id === selectedLayerId,
         'is-child': !!layer.parent_id,
         'is-hidden': layer.visible === false,
         'is-dragging': draggingId === layer.id,
